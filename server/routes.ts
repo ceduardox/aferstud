@@ -38,6 +38,67 @@ interface IncomingPushState {
   timer: ReturnType<typeof setTimeout> | null;
 }
 const incomingPushStateByConversation = new Map<number, IncomingPushState>();
+interface PushNotificationPreferences {
+  notifyNewMessages: boolean;
+  notifyPending: boolean;
+}
+let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
+const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
+
+async function ensurePushSettingsTable() {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS push_notification_settings (
+      id INTEGER PRIMARY KEY,
+      notify_new_messages BOOLEAN NOT NULL DEFAULT true,
+      notify_pending BOOLEAN NOT NULL DEFAULT true,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT push_notification_settings_singleton CHECK (id = 1)
+    )
+  `);
+  await db.execute(sql`
+    INSERT INTO push_notification_settings (id)
+    VALUES (1)
+    ON CONFLICT (id) DO NOTHING
+  `);
+}
+
+async function getPushNotificationPreferences(force = false): Promise<PushNotificationPreferences> {
+  const now = Date.now();
+  if (!force && pushSettingsCache && now - pushSettingsCache.loadedAt < PUSH_SETTINGS_CACHE_TTL_MS) {
+    return pushSettingsCache.settings;
+  }
+
+  await ensurePushSettingsTable();
+  const result: any = await db.execute(sql`
+    SELECT notify_new_messages, notify_pending
+    FROM push_notification_settings
+    WHERE id = 1
+    LIMIT 1
+  `);
+  const rows = result?.rows ?? [];
+  const row = rows[0];
+
+  const settings: PushNotificationPreferences = {
+    notifyNewMessages: row ? Boolean(row.notify_new_messages) : true,
+    notifyPending: row ? Boolean(row.notify_pending) : true,
+  };
+  pushSettingsCache = { settings, loadedAt: now };
+  return settings;
+}
+
+async function updatePushNotificationPreferences(next: PushNotificationPreferences): Promise<PushNotificationPreferences> {
+  await ensurePushSettingsTable();
+  await db.execute(sql`
+    UPDATE push_notification_settings
+    SET
+      notify_new_messages = ${next.notifyNewMessages},
+      notify_pending = ${next.notifyPending},
+      updated_at = NOW()
+    WHERE id = 1
+  `);
+  pushSettingsCache = { settings: next, loadedAt: Date.now() };
+  return next;
+}
 
 function flushMessageBuffer(waId: string) {
   const buffer = messageBuffers.get(waId);
@@ -559,12 +620,17 @@ async function sendPushNotification(title: string, message: string, data?: Recor
   }
 }
 
-function flushIncomingPushSummary(conversationId: number) {
+async function flushIncomingPushSummary(conversationId: number) {
   const state = incomingPushStateByConversation.get(conversationId);
   if (!state) return;
 
   state.timer = null;
   if (state.pendingCount <= 0) return;
+  const prefs = await getPushNotificationPreferences();
+  if (!prefs.notifyNewMessages) {
+    state.pendingCount = 0;
+    return;
+  }
 
   const count = state.pendingCount;
   const summaryTitle = count === 1 ? "Nuevo mensaje" : "Nuevos mensajes";
@@ -583,12 +649,14 @@ function flushIncomingPushSummary(conversationId: number) {
   state.lastSentAt = Date.now();
 }
 
-function queueIncomingMessagePush(
+async function queueIncomingMessagePush(
   conversationId: number,
   senderName: string,
   previewRaw: string | null | undefined,
   waId: string,
 ) {
+  const prefs = await getPushNotificationPreferences();
+  if (!prefs.notifyNewMessages) return;
   const preview = (previewRaw || "[Mensaje]")
     .replace(/\s+/g, " ")
     .trim()
@@ -620,7 +688,9 @@ function queueIncomingMessagePush(
   if (!state.timer) {
     const elapsed = now - state.lastSentAt;
     const delay = Math.max(0, INCOMING_PUSH_COOLDOWN_MS - elapsed);
-    state.timer = setTimeout(() => flushIncomingPushSummary(conversationId), delay);
+    state.timer = setTimeout(() => {
+      void flushIncomingPushSummary(conversationId);
+    }, delay);
   }
 }
 
@@ -1017,7 +1087,7 @@ export async function registerRoutes(
                 rawJson: msg,
               });
 
-              queueIncomingMessagePush(
+              await queueIncomingMessagePush(
                 conversation.id,
                 conversation.contactName || name || from,
                 messageText,
@@ -1451,11 +1521,14 @@ export async function registerRoutes(
     
     const updated = await storage.updateConversation(id, { orderStatus: parsed.data.orderStatus });
     if (parsed.data.orderStatus === "pending") {
-      sendPushNotification(
-        "Pedido en Proceso",
-        `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
-        { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
-      );
+      const prefs = await getPushNotificationPreferences();
+      if (prefs.notifyPending) {
+        sendPushNotification(
+          "Pedido en Proceso",
+          `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
+          { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
+        );
+      }
     } else if (parsed.data.orderStatus === "ready") {
       sendPushNotification(
         "Pedido Listo para Enviar",
@@ -1534,11 +1607,14 @@ export async function registerRoutes(
         { conversationId: id.toString(), waId: updated.waId, event: "should_call" },
       );
     } else if (column === "proceso") {
-      sendPushNotification(
-        "Pedido en Proceso",
-        `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
-        { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
-      );
+      const prefs = await getPushNotificationPreferences();
+      if (prefs.notifyPending) {
+        sendPushNotification(
+          "Pedido en Proceso",
+          `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
+          { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
+        );
+      }
     } else if (column === "listo") {
       sendPushNotification(
         "Pedido Listo para Enviar",
@@ -1996,6 +2072,40 @@ NO uses saludos formales. Sé directo y amigable.`
   // Get push notification logs
   app.get("/api/push-logs", requireAuth, async (req, res) => {
     res.json(pushLogs);
+  });
+
+  const pushSettingsUpdateSchema = z.object({
+    notifyNewMessages: z.boolean().optional(),
+    notifyPending: z.boolean().optional(),
+  });
+
+  app.get("/api/push-settings", requireAuth, async (_req, res) => {
+    try {
+      const settings = await getPushNotificationPreferences();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching push settings:", error);
+      res.status(500).json({ message: "Error fetching push settings" });
+    }
+  });
+
+  app.patch("/api/push-settings", requireAuth, async (req, res) => {
+    try {
+      const parsed = pushSettingsUpdateSchema.parse(req.body);
+      const current = await getPushNotificationPreferences();
+      const next: PushNotificationPreferences = {
+        notifyNewMessages: parsed.notifyNewMessages ?? current.notifyNewMessages,
+        notifyPending: parsed.notifyPending ?? current.notifyPending,
+      };
+      const updated = await updatePushNotificationPreferences(next);
+      res.json(updated);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid push settings data", errors: error.errors });
+      }
+      console.error("Error updating push settings:", error);
+      res.status(500).json({ message: "Error updating push settings" });
+    }
   });
 
   // === LEARNED RULES ROUTES ===

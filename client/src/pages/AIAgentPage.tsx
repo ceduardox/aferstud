@@ -87,6 +87,11 @@ interface PushLog {
   error?: string;
 }
 
+interface PushSettings {
+  notifyNewMessages: boolean;
+  notifyPending: boolean;
+}
+
 export default function AIAgentPage() {
   const { toast } = useToast();
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -159,6 +164,9 @@ export default function AIAgentPage() {
     queryKey: ["/api/push-logs"],
     refetchInterval: 10000,
   });
+  const { data: pushSettings } = useQuery<PushSettings>({
+    queryKey: ["/api/push-settings"],
+  });
 
   // State for editing rules
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -182,6 +190,19 @@ export default function AIAgentPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/ai/rules"] });
       toast({ title: "Regla actualizada" });
       setEditingRuleId(null);
+    },
+  });
+
+  const updatePushSettingsMutation = useMutation({
+    mutationFn: async (data: Partial<PushSettings>) => {
+      return apiRequest("PATCH", "/api/push-settings", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/push-settings"] });
+      toast({ title: "Preferencias de push guardadas" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al guardar push", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1124,6 +1145,40 @@ export default function AIAgentPage() {
                 No hay logs aún
               </p>
             )}
+          </div>
+
+          {/* Push Notification Controls */}
+          <div className="bg-slate-800/40 backdrop-blur-md border border-slate-700/50 rounded-xl p-5 shadow-xl">
+            <div className="mb-4">
+              <h3 className="font-semibold text-white">Notificaciones por Columna</h3>
+              <p className="text-xs text-slate-400">Activa o desactiva push para Nuevos y Esperando confirmacion</p>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium text-white">Nuevos</p>
+                  <p className="text-xs text-slate-400">Push cuando entra mensaje nuevo</p>
+                </div>
+                <Switch
+                  checked={pushSettings?.notifyNewMessages ?? true}
+                  onCheckedChange={(checked) => updatePushSettingsMutation.mutate({ notifyNewMessages: checked })}
+                  disabled={updatePushSettingsMutation.isPending}
+                  data-testid="switch-push-new-messages"
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium text-white">Esperando confirmacion</p>
+                  <p className="text-xs text-slate-400">Push cuando pasa a Proceso/Pending</p>
+                </div>
+                <Switch
+                  checked={pushSettings?.notifyPending ?? true}
+                  onCheckedChange={(checked) => updatePushSettingsMutation.mutate({ notifyPending: checked })}
+                  disabled={updatePushSettingsMutation.isPending}
+                  data-testid="switch-push-pending"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Push Notification Logs */}

@@ -799,21 +799,21 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
               onDragOverColumn={handleDragOverColumn}
               onDropOnColumn={handleDropOnColumn}
             />
+            {hasMoreConversations && (
+              <div className="md:hidden sticky bottom-2 z-30 flex justify-center px-3 pb-2">
+                <Button
+                  onClick={onLoadMore}
+                  variant="outline"
+                  className="h-9 border-slate-600 bg-slate-900/95 text-slate-200 hover:bg-slate-800 shadow-lg"
+                  data-testid="button-load-more-conversations-mobile"
+                >
+                  Ver mas (+20)
+                </Button>
+              </div>
+            )}
           </>
         )}
         </div>
-        {!activeId && hasMoreConversations && (
-          <div className="md:hidden absolute left-0 right-0 bottom-2 z-40 flex justify-center px-3 pointer-events-none">
-            <Button
-              onClick={onLoadMore}
-              variant="outline"
-              className="h-9 border-slate-600 bg-slate-900/95 text-slate-200 hover:bg-slate-800 shadow-lg pointer-events-auto"
-              data-testid="button-load-more-conversations-mobile"
-            >
-              Ver mas (+20)
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* Desktop: Grid view with glassmorphism */}

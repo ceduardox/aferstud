@@ -58,7 +58,7 @@
       const oneSignalAppId =
         configuredOneSignalAppId && configuredOneSignalAppId !== "%VITE_ONESIGNAL_APP_ID%"
           ? configuredOneSignalAppId
-          : "07dfe1e4-83b1-4623-b57c-e6e33232d4eb";
+          : "";
 
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       window.oneSignalReady = false;
@@ -69,6 +69,13 @@
       function initOneSignalClient() {
         if (window.oneSignalInitPromise) return window.oneSignalInitPromise;
         window.oneSignalInitPromise = new Promise((resolve) => {
+          if (!oneSignalAppId) {
+            window.oneSignalReady = false;
+            window.oneSignalInitError = "Missing VITE_ONESIGNAL_APP_ID";
+            resolve(false);
+            return;
+          }
+
           window.OneSignalDeferred.push(async function(OneSignal) {
             try {
               await OneSignal.init({

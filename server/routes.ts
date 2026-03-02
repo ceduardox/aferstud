@@ -452,7 +452,7 @@ const pushLogs: Array<{timestamp: string, title: string, message: string, event:
 // Send push notification via OneSignal
 async function sendPushNotification(title: string, message: string, data?: Record<string, string>) {
   const apiKey = process.env.ONESIGNAL_REST_API_KEY;
-  const appId = process.env.ONESIGNAL_APP_ID || "07dfe1e4-83b1-4623-b57c-e6e33232d4eb";
+  const appId = process.env.ONESIGNAL_APP_ID;
   const timestamp = new Date().toISOString();
   const event = data?.event || "unknown";
 
@@ -462,6 +462,13 @@ async function sendPushNotification(title: string, message: string, data?: Recor
   if (!apiKey) {
     console.log("[OneSignal] ERROR: API key not configured, skipping push notification");
     pushLogs.unshift({ timestamp, title, message, event, success: false, error: "API key not configured" });
+    if (pushLogs.length > 50) pushLogs.pop();
+    return;
+  }
+
+  if (!appId) {
+    console.log("[OneSignal] ERROR: App ID not configured, skipping push notification");
+    pushLogs.unshift({ timestamp, title, message, event, success: false, error: "App ID not configured" });
     if (pushLogs.length > 50) pushLogs.pop();
     return;
   }

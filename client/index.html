@@ -70,7 +70,10 @@
       async function resolveOneSignalAppId() {
         if (oneSignalAppId) return oneSignalAppId;
         try {
-          const response = await fetch("/api/public-config", { credentials: "same-origin" });
+          const response = await fetch("/api/public-config", {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
           if (!response.ok) return "";
           const config = await response.json();
           if (config?.oneSignalAppId && typeof config.oneSignalAppId === "string") {

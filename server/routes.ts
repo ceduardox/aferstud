@@ -684,8 +684,11 @@ export async function registerRoutes(
 
   // === DIAGNOSTIC ENDPOINTS (Public) ===
   app.get("/api/public-config", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.json({
-      oneSignalAppId: process.env.ONESIGNAL_APP_ID || null,
+      oneSignalAppId: process.env.ONESIGNAL_APP_ID || process.env.VITE_ONESIGNAL_APP_ID || null,
     });
   });
 

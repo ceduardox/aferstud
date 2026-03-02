@@ -20,6 +20,7 @@ import { sql } from "drizzle-orm";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const AI_DEBOUNCE_MS = 3000;
+const INCOMING_PUSH_COOLDOWN_MS = 60000;
 interface BufferedMessage {
   messageForAi: string;
   imageBase64ForAi?: string;
@@ -29,6 +30,14 @@ interface BufferedMessage {
   name: string;
 }
 const messageBuffers = new Map<string, { messages: BufferedMessage[]; timer: ReturnType<typeof setTimeout> }>();
+interface IncomingPushState {
+  lastSentAt: number;
+  pendingCount: number;
+  latestPreview: string;
+  senderName: string;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const incomingPushStateByConversation = new Map<number, IncomingPushState>();
 
 function flushMessageBuffer(waId: string) {
   const buffer = messageBuffers.get(waId);
@@ -550,6 +559,71 @@ async function sendPushNotification(title: string, message: string, data?: Recor
   }
 }
 
+function flushIncomingPushSummary(conversationId: number) {
+  const state = incomingPushStateByConversation.get(conversationId);
+  if (!state) return;
+
+  state.timer = null;
+  if (state.pendingCount <= 0) return;
+
+  const count = state.pendingCount;
+  const summaryTitle = count === 1 ? "Nuevo mensaje" : "Nuevos mensajes";
+  const summaryMessage =
+    count === 1
+      ? `${state.senderName}: ${state.latestPreview}`
+      : `${state.senderName}: ${count} mensajes nuevos`;
+
+  sendPushNotification(summaryTitle, summaryMessage, {
+    conversationId: conversationId.toString(),
+    event: "incoming_message_batch",
+    count: count.toString(),
+  });
+
+  state.pendingCount = 0;
+  state.lastSentAt = Date.now();
+}
+
+function queueIncomingMessagePush(
+  conversationId: number,
+  senderName: string,
+  previewRaw: string | null | undefined,
+  waId: string,
+) {
+  const preview = (previewRaw || "[Mensaje]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  const safeSender = senderName || waId;
+  const now = Date.now();
+
+  let state = incomingPushStateByConversation.get(conversationId);
+  if (!state) {
+    sendPushNotification("Nuevo mensaje", `${safeSender}: ${preview}`, {
+      conversationId: conversationId.toString(),
+      waId,
+      event: "incoming_message",
+    });
+    incomingPushStateByConversation.set(conversationId, {
+      lastSentAt: now,
+      pendingCount: 0,
+      latestPreview: preview,
+      senderName: safeSender,
+      timer: null,
+    });
+    return;
+  }
+
+  state.pendingCount += 1;
+  state.latestPreview = preview;
+  state.senderName = safeSender;
+
+  if (!state.timer) {
+    const elapsed = now - state.lastSentAt;
+    const delay = Math.max(0, INCOMING_PUSH_COOLDOWN_MS - elapsed);
+    state.timer = setTimeout(() => flushIncomingPushSummary(conversationId), delay);
+  }
+}
+
 // Endpoint to get push logs
 export function getPushLogs() {
   return pushLogs;
@@ -942,6 +1016,13 @@ export async function registerRoutes(
                 status: "received",
                 rawJson: msg,
               });
+
+              queueIncomingMessagePush(
+                conversation.id,
+                conversation.contactName || name || from,
+                messageText,
+                from,
+              );
 
               // 5. AI Auto-Response with debounce buffer (groups rapid messages)
               let agentAllowsAi = true;

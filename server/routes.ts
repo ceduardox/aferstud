@@ -460,6 +460,7 @@ async function sendPushNotification(title: string, message: string, data?: Recor
     .filter(Boolean);
   const timestamp = new Date().toISOString();
   const event = data?.event || "unknown";
+  const uniqueTopic = `${event}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   console.log("[OneSignal] Attempting to send notification:", { title, message });
   console.log("[OneSignal] API Key configured:", !!apiKey);
@@ -487,6 +488,7 @@ async function sendPushNotification(title: string, message: string, data?: Recor
       data: data || {},
       url: "https://ryzapp.org/",
       chrome_web_icon: "https://ryzapp.org/icon-512.png",
+      web_push_topic: uniqueTopic,
       ttl: 60,
     };
     
@@ -523,6 +525,7 @@ async function sendPushNotification(title: string, message: string, data?: Recor
             data: data || {},
             url: "https://ryzapp.org/",
             chrome_web_icon: "https://ryzapp.org/icon-512.png",
+            web_push_topic: uniqueTopic,
             ttl: 60,
           },
           {
@@ -1372,6 +1375,18 @@ export async function registerRoutes(
         `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
         { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
       );
+    } else if (parsed.data.orderStatus === "ready") {
+      sendPushNotification(
+        "Pedido Listo para Enviar",
+        `${updated.contactName || updated.waId}: Pedido listo para despacho`,
+        { conversationId: id.toString(), waId: updated.waId, event: "order_ready" },
+      );
+    } else if (parsed.data.orderStatus === "delivered") {
+      sendPushNotification(
+        "Pedido Entregado",
+        `${updated.contactName || updated.waId}: Pedido marcado como entregado`,
+        { conversationId: id.toString(), waId: updated.waId, event: "order_delivered" },
+      );
     }
     res.json(updated);
   });
@@ -1425,11 +1440,35 @@ export async function registerRoutes(
     }
 
     const updated = await storage.updateConversation(id, updates);
-    if (column === "proceso") {
+    if (column === "humano") {
+      sendPushNotification(
+        "Atención Humana Requerida",
+        `${updated.contactName || updated.waId}: El cliente necesita hablar con un humano`,
+        { conversationId: id.toString(), waId: updated.waId, event: "human_attention" },
+      );
+    } else if (column === "llamar") {
+      sendPushNotification(
+        "Llamar al Cliente",
+        `${updated.contactName || updated.waId}: Marcado para llamada`,
+        { conversationId: id.toString(), waId: updated.waId, event: "should_call" },
+      );
+    } else if (column === "proceso") {
       sendPushNotification(
         "Pedido en Proceso",
         `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
         { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
+      );
+    } else if (column === "listo") {
+      sendPushNotification(
+        "Pedido Listo para Enviar",
+        `${updated.contactName || updated.waId}: Pedido listo para despacho`,
+        { conversationId: id.toString(), waId: updated.waId, event: "order_ready" },
+      );
+    } else if (column === "entregado") {
+      sendPushNotification(
+        "Pedido Entregado",
+        `${updated.contactName || updated.waId}: Pedido marcado como entregado`,
+        { conversationId: id.toString(), waId: updated.waId, event: "order_delivered" },
       );
     }
     res.json(updated);

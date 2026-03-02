@@ -156,6 +156,7 @@ export default function InboxPage() {
           daysToShow={daysToShow}
           onDaysChange={setDaysToShow}
           onLoadMore={handleLoadMore}
+          hasMoreConversations={hasMoreConversations}
           maxDays={maxDays}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -174,19 +175,6 @@ export default function InboxPage() {
           </Button>
         </div>
       )}
-      {!loadingList && hasMoreConversations && (
-        <div className="md:hidden fixed left-0 right-0 bottom-16 z-50 flex justify-center px-3">
-          <Button
-            onClick={handleLoadMore}
-            variant="outline"
-            className="h-9 border-slate-600 bg-slate-900/95 text-slate-200 hover:bg-slate-800 shadow-lg"
-            data-testid="button-load-more-conversations-mobile"
-          >
-            Ver mas (+20)
-          </Button>
-        </div>
-      )}
-
       {/* Mobile Bottom Navigation - Futuristic */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-emerald-500/20 flex justify-around items-center py-2 px-1 z-50">
         <Link href="/">

@@ -473,8 +473,8 @@ async function sendPushNotification(title: string, message: string, data?: Recor
       headings: { en: title },
       contents: { en: message },
       data: data || {},
-      url: "https://ryztor.replit.app",
-      chrome_web_icon: "https://ryztor.replit.app/icon-512.png",
+      url: "https://ryzapp.org/",
+      chrome_web_icon: "https://ryzapp.org/icon-512.png",
       ttl: 60,
     };
     
@@ -509,8 +509,8 @@ async function sendPushNotification(title: string, message: string, data?: Recor
             headings: { en: title },
             contents: { en: message },
             data: data || {},
-            url: "https://ryztor.replit.app",
-            chrome_web_icon: "https://ryztor.replit.app/icon-512.png",
+            url: "https://ryzapp.org/",
+            chrome_web_icon: "https://ryzapp.org/icon-512.png",
             ttl: 60,
           },
           {

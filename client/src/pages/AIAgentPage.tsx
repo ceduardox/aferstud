@@ -107,6 +107,7 @@ export default function AIAgentPage() {
   const [audioVoice, setAudioVoice] = useState("nova");
   const [ttsProvider, setTtsProvider] = useState("openai");
   const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState("JBFqnCBsd6RMkjVDRZzb");
+  const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const [ttsSpeed, setTtsSpeed] = useState(100);
   const [ttsInstructions, setTtsInstructions] = useState("");
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
@@ -166,6 +167,42 @@ export default function AIAgentPage() {
   });
   const { data: pushSettings } = useQuery<PushSettings>({
     queryKey: ["/api/push-settings"],
+  });
+
+  const openAiVoiceOptions = [
+    { value: "marin", label: "Marin", desc: "Realista", realistic: true },
+    { value: "cedar", label: "Cedar", desc: "Realista", realistic: true },
+    { value: "ash", label: "Ash", desc: "Realista", realistic: true },
+    { value: "ballad", label: "Ballad", desc: "Realista", realistic: true },
+    { value: "sage", label: "Sage", desc: "Realista", realistic: true },
+    { value: "verse", label: "Verse", desc: "Realista", realistic: true },
+    { value: "coral", label: "Coral", desc: "Basica", realistic: false },
+    { value: "nova", label: "Nova", desc: "Basica", realistic: false },
+    { value: "alloy", label: "Alloy", desc: "Basica", realistic: false },
+    { value: "echo", label: "Echo", desc: "Basica", realistic: false },
+    { value: "shimmer", label: "Shimmer", desc: "Basica", realistic: false },
+    { value: "fable", label: "Fable", desc: "Basica", realistic: false },
+    { value: "onyx", label: "Onyx", desc: "Basica", realistic: false },
+  ];
+  const normalizedVoiceSearch = voiceSearchQuery.toLowerCase().trim();
+  const filteredOpenAiVoices = openAiVoiceOptions.filter((voice) => {
+    if (!normalizedVoiceSearch) return true;
+    return (
+      voice.label.toLowerCase().includes(normalizedVoiceSearch) ||
+      voice.desc.toLowerCase().includes(normalizedVoiceSearch) ||
+      voice.value.toLowerCase().includes(normalizedVoiceSearch)
+    );
+  });
+  const filteredElevenLabsVoices = elevenLabsVoices.filter((voice) => {
+    if (!normalizedVoiceSearch) return true;
+    const description = String(
+      voice.labels?.description || voice.labels?.accent || voice.labels?.use_case || voice.category || "",
+    ).toLowerCase();
+    return (
+      voice.name.toLowerCase().includes(normalizedVoiceSearch) ||
+      description.includes(normalizedVoiceSearch) ||
+      voice.voice_id.toLowerCase().includes(normalizedVoiceSearch)
+    );
   });
 
   // State for editing rules
@@ -608,26 +645,20 @@ export default function AIAgentPage() {
                   </button>
                 </div>
 
-                {ttsProvider === "openai" && (
+                                {ttsProvider === "openai" && (
                   <>
                     <Label className="font-medium text-slate-300">Voz de OpenAI</Label>
                     <p className="text-xs text-slate-500">Voces realistas usan modelo avanzado (mayor calidad y costo)</p>
+                    <Input
+                      type="text"
+                      placeholder="Buscar voz OpenAI..."
+                      value={voiceSearchQuery}
+                      onChange={(e) => setVoiceSearchQuery(e.target.value)}
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                      data-testid="input-search-voice-openai"
+                    />
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {[
-                        { value: "marin", label: "Marin", desc: "Realista", realistic: true },
-                        { value: "cedar", label: "Cedar", desc: "Realista", realistic: true },
-                        { value: "ash", label: "Ash", desc: "Realista", realistic: true },
-                        { value: "ballad", label: "Ballad", desc: "Realista", realistic: true },
-                        { value: "sage", label: "Sage", desc: "Realista", realistic: true },
-                        { value: "verse", label: "Verse", desc: "Realista", realistic: true },
-                        { value: "coral", label: "Coral", desc: "Básica", realistic: false },
-                        { value: "nova", label: "Nova", desc: "Básica", realistic: false },
-                        { value: "alloy", label: "Alloy", desc: "Básica", realistic: false },
-                        { value: "echo", label: "Echo", desc: "Básica", realistic: false },
-                        { value: "shimmer", label: "Shimmer", desc: "Básica", realistic: false },
-                        { value: "fable", label: "Fable", desc: "Básica", realistic: false },
-                        { value: "onyx", label: "Onyx", desc: "Básica", realistic: false },
-                      ].map((voice) => (
+                      {filteredOpenAiVoices.map((voice) => (
                         <button
                           key={voice.value}
                           type="button"
@@ -638,7 +669,7 @@ export default function AIAgentPage() {
                           className={`p-3 rounded-xl border-2 text-left transition-all ${
                             audioVoice === voice.value
                               ? "border-emerald-500 bg-emerald-500/20 shadow-lg shadow-emerald-500/20"
-                              : voice.realistic 
+                              : voice.realistic
                                 ? "border-amber-500/30 bg-amber-500/10 hover:border-amber-500 hover:bg-amber-500/20"
                                 : "border-slate-600/50 bg-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-700/50"
                           }`}
@@ -656,6 +687,14 @@ export default function AIAgentPage() {
                   <>
                     <Label className="font-medium text-slate-300">Voz de ElevenLabs</Label>
                     <p className="text-xs text-slate-500">Selecciona una voz ultra-realista de tu cuenta ElevenLabs</p>
+                    <Input
+                      type="text"
+                      placeholder="Buscar voz ElevenLabs..."
+                      value={voiceSearchQuery}
+                      onChange={(e) => setVoiceSearchQuery(e.target.value)}
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                      data-testid="input-search-voice-elevenlabs"
+                    />
                     {elVoicesError ? (
                       <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-center">
                         <p className="text-sm text-red-300">Error al cargar voces. Verifica tu conexión con ElevenLabs.</p>
@@ -666,7 +705,7 @@ export default function AIAgentPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
-                        {elevenLabsVoices.map((voice) => (
+                        {filteredElevenLabsVoices.map((voice) => (
                           <button
                             key={voice.voice_id}
                             type="button"
@@ -1246,3 +1285,6 @@ export default function AIAgentPage() {
     </div>
   );
 }
+
+
+

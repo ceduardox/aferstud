@@ -347,6 +347,11 @@ interface TtsOptions {
 
 // Get ElevenLabs API key via Replit connector
 async function getElevenLabsApiKey(): Promise<string> {
+  const directApiKey = process.env.ELEVENLABS_API_KEY;
+  if (directApiKey && directApiKey.trim().length > 0) {
+    return directApiKey.trim();
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY

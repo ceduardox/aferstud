@@ -63,10 +63,15 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<"image" | "audio" | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<BlobPart[]>([]);
   const { mutate: sendMessage, isPending } = useSendMessage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -135,9 +140,148 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     setFailedMediaIds({});
   }, [conversation.id]);
 
+  useEffect(() => {
+    if (!isRecording) return;
+    const timer = window.setInterval(() => {
+      setRecordingSeconds((value) => value + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingStreamRef.current) {
+        recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (filePreview) {
+        URL.revokeObjectURL(filePreview);
+      }
+    };
+  }, [filePreview]);
+
   const markMediaAsFailed = (mediaId?: string | null) => {
     if (!mediaId) return;
     setFailedMediaIds((prev) => (prev[mediaId] ? prev : { ...prev, [mediaId]: true }));
+  };
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
+
+  const getRecordingMimeType = () => {
+    if (typeof MediaRecorder === "undefined") return "";
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/ogg",
+    ];
+    for (const candidate of candidates) {
+      if (MediaRecorder.isTypeSupported(candidate)) return candidate;
+    }
+    return "";
+  };
+
+  const stopRecordingStream = () => {
+    if (!recordingStreamRef.current) return;
+    recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+  };
+
+  const startRecording = async () => {
+    if (isRecording) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast({ title: "No compatible", description: "Tu navegador no permite grabar audio", variant: "destructive" });
+      return;
+    }
+
+    try {
+      if (filePreview) {
+        URL.revokeObjectURL(filePreview);
+      }
+      setSelectedFile(null);
+      setSelectedFileType(null);
+      setFilePreview(null);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getRecordingMimeType();
+      const options: MediaRecorderOptions = { audioBitsPerSecond: 24000 };
+      if (mimeType) options.mimeType = mimeType;
+
+      const recorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = recorder;
+      recordingStreamRef.current = stream;
+      recordingChunksRef.current = [];
+      setRecordingSeconds(0);
+      setIsRecording(true);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setIsRecording(false);
+        stopRecordingStream();
+        toast({ title: "Error", description: "No se pudo grabar el audio", variant: "destructive" });
+      };
+
+      recorder.onstop = () => {
+        const finalMimeType = recorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(recordingChunksRef.current, { type: finalMimeType });
+        recordingChunksRef.current = [];
+        setIsRecording(false);
+        stopRecordingStream();
+
+        if (!blob.size) {
+          toast({ title: "Audio vacio", description: "No se detecto audio en la grabacion", variant: "destructive" });
+          return;
+        }
+
+        const extension =
+          finalMimeType.includes("ogg") ? "ogg" :
+          finalMimeType.includes("mp4") || finalMimeType.includes("m4a") ? "m4a" :
+          finalMimeType.includes("mpeg") || finalMimeType.includes("mp3") ? "mp3" :
+          "webm";
+
+        const file = new File([blob], `grabacion-${Date.now()}.${extension}`, { type: finalMimeType });
+        if (filePreview) {
+          URL.revokeObjectURL(filePreview);
+        }
+        const previewUrl = URL.createObjectURL(blob);
+        setSelectedFile(file);
+        setSelectedFileType("audio");
+        setFilePreview(previewUrl);
+        toast({ title: "Audio grabado", description: "Escuchalo antes de enviar" });
+      };
+
+      recorder.start(250);
+    } catch (error: any) {
+      setIsRecording(false);
+      stopRecordingStream();
+      const denied = String(error?.message || "").toLowerCase().includes("denied");
+      toast({
+        title: denied ? "Permiso denegado" : "Error al grabar",
+        description: denied ? "Permite acceso al microfono para grabar audio" : "No se pudo iniciar la grabacion",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") {
+      setIsRecording(false);
+      stopRecordingStream();
+      return;
+    }
+    recorder.stop();
   };
 
   const getReferralInfo = (msg: Message) => {
@@ -966,6 +1110,15 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
             <Input placeholder="URL de imagen..." value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} className="text-sm" />
           </div>
         )}
+        {isRecording && (
+          <div className="mb-2 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+              Grabando: {formatRecordingTime(recordingSeconds)}
+            </span>
+            <span>Toca mic para detener</span>
+          </div>
+        )}
         
         <div className="flex items-end gap-2">
           {/* Attachment Menu */}
@@ -1044,8 +1197,20 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           />
 
           <Button
+            onClick={() => (isRecording ? stopRecording() : startRecording())}
+            disabled={uploadImageMutation.isPending || uploadAudioMutation.isPending}
+            size="icon"
+            variant={isRecording ? "destructive" : "ghost"}
+            className={cn("rounded-full h-10 w-10 flex-shrink-0", isRecording && "animate-pulse")}
+            data-testid="button-record-audio"
+            title={isRecording ? "Detener grabacion" : "Grabar audio"}
+          >
+            <Mic className="h-4 w-4" />
+          </Button>
+
+          <Button
             onClick={() => handleSend()}
-            disabled={(!text && !imageUrl && !selectedFile) || isPending || uploadImageMutation.isPending || uploadAudioMutation.isPending}
+            disabled={(!text && !imageUrl && !selectedFile) || isPending || uploadImageMutation.isPending || uploadAudioMutation.isPending || isRecording}
             size="icon"
             className="rounded-full h-10 w-10 flex-shrink-0"
           >

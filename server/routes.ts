@@ -1491,9 +1491,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Missing audio or recipient" });
       }
 
-      const allowedTypes = [
+      const normalizedMimeType = String(file.mimetype || "").toLowerCase();
+      const allowedAudioMimePrefixes = [
         "audio/ogg",
-        "audio/ogg; codecs=opus",
         "audio/mpeg",
         "audio/mp3",
         "audio/mp4",
@@ -1502,7 +1502,7 @@ export async function registerRoutes(
         "audio/x-wav",
         "audio/webm",
       ];
-      if (!allowedTypes.includes(file.mimetype)) {
+      if (!allowedAudioMimePrefixes.some((prefix) => normalizedMimeType.startsWith(prefix))) {
         return res.status(400).json({ message: "Formato no soportado. Usa OGG, MP3, M4A, WAV o WEBM." });
       }
 
@@ -1514,9 +1514,9 @@ export async function registerRoutes(
 
       const FormData = (await import("form-data")).default;
       const formData = new FormData();
-      formData.append("file", file.buffer, { filename: file.originalname, contentType: file.mimetype });
+      formData.append("file", file.buffer, { filename: file.originalname, contentType: normalizedMimeType });
       formData.append("messaging_product", "whatsapp");
-      formData.append("type", file.mimetype);
+      formData.append("type", normalizedMimeType);
 
       const uploadRes = await axios.post(
         `https://graph.facebook.com/v24.0/${phoneId}/media`,
@@ -1557,7 +1557,7 @@ export async function registerRoutes(
         conversationId: conversation.id, waMessageId,
         direction: "out", type: "audio",
         text: "[audio]",
-        mediaId, mimeType: file.mimetype,
+        mediaId, mimeType: normalizedMimeType,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent", rawJson: waResponse.data,
       });

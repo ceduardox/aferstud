@@ -1027,6 +1027,9 @@ export async function registerRoutes(
                 } else {
                   messageForAi = '[El cliente envió una imagen]';
                 }
+              } else if (msg.type === 'sticker') {
+                messageText = '[Sticker]';
+                messageForAi = '[El cliente envió un sticker]';
               } else if (msg.type === 'audio') {
                 // Handle voice notes and audio messages
                 wasAudioMessage = true;
@@ -1096,9 +1099,9 @@ export async function registerRoutes(
               const existing = await storage.getMessageByWaId(msg.id);
               if (existing) continue;
 
-              // 4. Save Message (include mediaId for images and audio)
-              const mediaId = msg.image?.id || msg.audio?.id || null;
-              const mimeType = msg.image?.mime_type || msg.audio?.mime_type || null;
+              // 4. Save Message (include mediaId for images, stickers and audio)
+              const mediaId = msg.image?.id || msg.sticker?.id || msg.audio?.id || null;
+              const mimeType = msg.image?.mime_type || msg.sticker?.mime_type || msg.audio?.mime_type || null;
               
               await storage.createMessage({
                 conversationId: conversation.id,

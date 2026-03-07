@@ -729,6 +729,28 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                   </div>
                 )}
 
+                {msg.type === "sticker" && (
+                  <div className="mb-2 rounded overflow-hidden">
+                    {msg.mediaId && !failedMediaIds[msg.mediaId] ? (
+                      <img
+                        src={`/api/media/${msg.mediaId}`}
+                        alt="Sticker"
+                        className="max-w-[180px] h-auto"
+                        loading="lazy"
+                        onError={() => markMediaAsFailed(msg.mediaId)}
+                      />
+                    ) : msg.mediaId && failedMediaIds[msg.mediaId] ? (
+                      <div className="rounded bg-black/5 dark:bg-white/5 px-2 py-1 text-xs text-slate-500">
+                        Sticker no disponible
+                      </div>
+                    ) : (
+                      <div className="rounded bg-black/5 dark:bg-white/5 px-2 py-1 text-xs text-slate-500">
+                        Sticker
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {msg.type === "audio" && msg.mediaId && !failedMediaIds[msg.mediaId] && (
                   <div className="mb-2">
                     <audio
@@ -770,7 +792,9 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                   ) : null;
                 })()}
                 
-                {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
+                {msg.text && !(msg.type === "sticker" && msg.text.startsWith("[Sticker")) && (
+                  <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                )}
 
                 <div className={cn("flex items-center justify-end gap-1 mt-1 text-[10px] opacity-60")}>
                   <span>{msg.timestamp ? format(new Date(parseInt(msg.timestamp) * 1000), 'h:mm a') : format(new Date(), 'h:mm a')}</span>

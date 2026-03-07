@@ -164,6 +164,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       setSelectedFileType(null);
       setFilePreview(null);
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Audio enviado" });
     },
     onError: (err: any) => {
       toast({ title: "Error al enviar audio", description: err.message, variant: "destructive" });

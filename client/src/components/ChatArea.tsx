@@ -120,7 +120,18 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       formData.append("audio", file);
       formData.append("to", to);
       const res = await fetch("/api/send-audio", { method: "POST", body: formData, credentials: "include" });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Error"); }
+      if (!res.ok) {
+        const raw = await res.text();
+        let err: any = {};
+        try {
+          err = raw ? JSON.parse(raw) : {};
+        } catch {
+          err = {};
+        }
+        const details = err?.error ? `: ${err.error}` : "";
+        const message = err?.message || raw || `HTTP ${res.status}`;
+        throw new Error(`${message}${details}`);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -129,7 +140,6 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       setSelectedFileType(null);
       setFilePreview(null);
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-      toast({ title: "Audio enviado" });
     },
     onError: (err: any) => {
       toast({ title: "Error al enviar audio", description: err.message, variant: "destructive" });
@@ -194,8 +204,6 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       "audio/ogg;codecs=opus",
       "audio/ogg",
       "audio/mp4",
-      "audio/webm;codecs=opus",
-      "audio/webm",
     ];
     for (const candidate of candidates) {
       if (MediaRecorder.isTypeSupported(candidate)) return candidate;
@@ -215,6 +223,15 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       toast({ title: "No compatible", description: "Tu navegador no permite grabar audio", variant: "destructive" });
       return;
     }
+    const mimeType = getRecordingMimeType();
+    if (!mimeType) {
+      toast({
+        title: "Formato no compatible",
+        description: "Este navegador no graba en OGG/MP4 compatible con WhatsApp. Usa Audio (archivo) en MP3/M4A.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       if (filePreview) {
@@ -224,8 +241,13 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       setSelectedFileType(null);
       setFilePreview(null);
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = getRecordingMimeType();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
       const options: MediaRecorderOptions = { audioBitsPerSecond: 24000 };
       if (mimeType) options.mimeType = mimeType;
 
@@ -249,7 +271,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       };
 
       recorder.onstop = () => {
-        const finalMimeType = recorder.mimeType || mimeType || "audio/webm";
+        const finalMimeType = (recorder.mimeType || mimeType || "audio/ogg").toLowerCase();
         const blob = new Blob(recordingChunksRef.current, { type: finalMimeType });
         recordingChunksRef.current = [];
         setIsRecording(false);
@@ -260,11 +282,20 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           return;
         }
 
+        if (finalMimeType.startsWith("audio/webm")) {
+          toast({
+            title: "Formato no compatible",
+            description: "Esta grabacion salio en WEBM y WhatsApp puede rechazarla. Usa Audio (archivo) en MP3/M4A/OGG.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         const extension =
           finalMimeType.includes("ogg") ? "ogg" :
           finalMimeType.includes("mp4") || finalMimeType.includes("m4a") ? "m4a" :
           finalMimeType.includes("mpeg") || finalMimeType.includes("mp3") ? "mp3" :
-          "webm";
+          "ogg";
 
         const file = new File([blob], `grabacion-${Date.now()}.${extension}`, { type: finalMimeType });
         if (filePreview) {
@@ -274,7 +305,6 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         setSelectedFile(file);
         setSelectedFileType("audio");
         setFilePreview(previewUrl);
-        toast({ title: "Audio grabado", description: "Escuchalo antes de enviar" });
       };
 
       recorder.start(250);
@@ -592,6 +622,24 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     if (!file) return;
     if (!file.type.startsWith("audio/")) {
       toast({ title: "Formato no soportado", description: "Selecciona un audio", variant: "destructive" });
+      return;
+    }
+    const normalizedMime = file.type.toLowerCase();
+    const allowedAudioPrefixes = [
+      "audio/ogg",
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/mp4",
+      "audio/x-m4a",
+      "audio/aac",
+      "audio/amr",
+    ];
+    if (!allowedAudioPrefixes.some((prefix) => normalizedMime.startsWith(prefix))) {
+      toast({
+        title: "Formato no compatible",
+        description: "WhatsApp Cloud acepta OGG, MP3, M4A, AAC o AMR.",
+        variant: "destructive",
+      });
       return;
     }
     if (file.size > 16 * 1024 * 1024) {

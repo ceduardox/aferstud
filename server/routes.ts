@@ -1494,18 +1494,21 @@ export async function registerRoutes(
       const normalizedMimeType = String(file.mimetype || "").toLowerCase();
       const baseMimeType = normalizedMimeType.split(";")[0].trim();
       const allowedAudioMimePrefixes = [
+        "audio/aac",
+        "audio/amr",
         "audio/ogg",
         "audio/mpeg",
         "audio/mp3",
         "audio/mp4",
         "audio/x-m4a",
-        "audio/wav",
-        "audio/x-wav",
-        "audio/webm",
       ];
       if (!allowedAudioMimePrefixes.some((prefix) => baseMimeType.startsWith(prefix))) {
-        return res.status(400).json({ message: "Formato no soportado. Usa OGG, MP3, M4A, WAV o WEBM." });
+        return res.status(400).json({ message: "Formato no soportado. Usa OGG, MP3, M4A, AAC o AMR." });
       }
+      const mimeTypeForMeta =
+        baseMimeType === "audio/x-m4a" ? "audio/mp4" :
+        baseMimeType === "audio/mp3" ? "audio/mpeg" :
+        baseMimeType;
 
       const token = process.env.META_ACCESS_TOKEN;
       const phoneId = process.env.WA_PHONE_NUMBER_ID;
@@ -1515,9 +1518,9 @@ export async function registerRoutes(
 
       const FormData = (await import("form-data")).default;
       const formData = new FormData();
-      formData.append("file", file.buffer, { filename: file.originalname, contentType: baseMimeType });
+      formData.append("file", file.buffer, { filename: file.originalname, contentType: mimeTypeForMeta });
       formData.append("messaging_product", "whatsapp");
-      formData.append("type", baseMimeType);
+      formData.append("type", mimeTypeForMeta);
 
       const uploadRes = await axios.post(
         `https://graph.facebook.com/v24.0/${phoneId}/media`,
@@ -1558,7 +1561,7 @@ export async function registerRoutes(
         conversationId: conversation.id, waMessageId,
         direction: "out", type: "audio",
         text: "[audio]",
-        mediaId, mimeType: baseMimeType,
+        mediaId, mimeType: mimeTypeForMeta,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent", rawJson: waResponse.data,
       });

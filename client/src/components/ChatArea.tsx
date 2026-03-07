@@ -34,6 +34,30 @@ interface ChatAreaProps {
   messages: Message[];
 }
 
+const FAILED_MEDIA_STORAGE_KEY = "ryzapp_failed_media_ids_v1";
+
+const readFailedMediaIdsFromSession = (): Record<string, true> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.sessionStorage.getItem(FAILED_MEDIA_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, true>;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+};
+
+const writeFailedMediaIdsToSession = (failed: Record<string, true>) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(FAILED_MEDIA_STORAGE_KEY, JSON.stringify(failed));
+  } catch {
+    // ignore storage quota/private mode errors
+  }
+};
+
 const LABEL_COLORS = [
   { name: "blue", bg: "bg-blue-500", text: "text-white" },
   { name: "green", bg: "bg-green-500", text: "text-white" },
@@ -80,7 +104,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
+  const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>(() => readFailedMediaIdsFromSession());
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -162,10 +186,6 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const currentLabel = labelsData.find(l => l.id === conversation.labelId);
 
   useEffect(() => {
-    setFailedMediaIds({});
-  }, [conversation.id]);
-
-  useEffect(() => {
     if (!isRecording) return;
     const timer = window.setInterval(() => {
       setRecordingSeconds((value) => value + 1);
@@ -189,7 +209,12 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
 
   const markMediaAsFailed = (mediaId?: string | null) => {
     if (!mediaId) return;
-    setFailedMediaIds((prev) => (prev[mediaId] ? prev : { ...prev, [mediaId]: true }));
+    setFailedMediaIds((prev) => {
+      if (prev[mediaId]) return prev;
+      const next: Record<string, true> = { ...prev, [mediaId]: true };
+      writeFailedMediaIdsToSession(next);
+      return next;
+    });
   };
 
   const formatRecordingTime = (seconds: number) => {

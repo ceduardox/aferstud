@@ -545,6 +545,14 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
 
 // Push notification logs (in-memory, max 50)
 const pushLogs: Array<{timestamp: string, title: string, message: string, event: string, success: boolean, error?: string}> = [];
+const waStatusLogs: Array<{
+  timestamp: string;
+  messageId?: string;
+  recipientId?: string;
+  status?: string;
+  conversationId?: string;
+  errors?: any;
+}> = [];
 
 // Send push notification via OneSignal
 async function sendPushNotification(title: string, message: string, data?: Record<string, string>) {
@@ -1164,8 +1172,24 @@ export async function registerRoutes(
 
             // Handle Statuses (delivered, read)
             if (value.statuses && value.statuses.length > 0) {
-              const status = value.statuses[0];
-              await storage.updateMessageStatus(status.id, status.status);
+              for (const status of value.statuses) {
+                await storage.updateMessageStatus(status.id, status.status);
+                const statusEntry = {
+                  timestamp: new Date().toISOString(),
+                  messageId: status.id,
+                  recipientId: status.recipient_id,
+                  status: status.status,
+                  conversationId: status.conversation?.id,
+                  errors: status.errors || null,
+                };
+                waStatusLogs.unshift(statusEntry);
+                if (waStatusLogs.length > 100) waStatusLogs.pop();
+                if (status.status === "failed") {
+                  console.error("[WA STATUS FAILED]", JSON.stringify(statusEntry, null, 2));
+                } else {
+                  console.log("[WA STATUS]", status.id, status.status, status.recipient_id || "");
+                }
+              }
             }
           }
         }
@@ -1544,6 +1568,7 @@ export async function registerRoutes(
         { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
       );
       const waMessageId = waResponse.data.messages[0].id;
+      const waMessageStatus = waResponse.data.messages[0]?.message_status || null;
 
       const normalizedTo = to.replace(/^\+/, "");
       let conversation = await storage.getConversationByWaId(normalizedTo);
@@ -1567,7 +1592,7 @@ export async function registerRoutes(
         status: "sent", rawJson: waResponse.data,
       });
 
-      res.json({ success: true, messageId: waMessageId });
+      res.json({ success: true, messageId: waMessageId, messageStatus: waMessageStatus });
     } catch (error: any) {
       const details = error.response?.data?.error?.message || error.response?.data?.message || error.message;
       console.error("Audio upload error:", error.response?.data || error.message);
@@ -2203,6 +2228,11 @@ NO uses saludos formales. Sé directo y amigable.`
   // Get push notification logs
   app.get("/api/push-logs", requireAuth, async (req, res) => {
     res.json(pushLogs);
+  });
+
+  // Get WhatsApp delivery status logs (includes failed reasons when provided by Meta)
+  app.get("/api/wa-status-logs", requireAuth, async (_req, res) => {
+    res.json(waStatusLogs);
   });
 
   app.post("/api/tts/preview", requireAuth, async (req, res) => {

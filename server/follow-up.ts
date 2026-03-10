@@ -3,8 +3,55 @@ import { db } from "./db";
 import { conversations } from "@shared/schema";
 import { eq, desc, and, lte, gte, sql } from "drizzle-orm";
 import { generateAiResponse } from "./ai-service";
+import type { Message } from "@shared/schema";
 
 let sendAiResponseFn: ((to: string, responseText: string) => Promise<any>) | null = null;
+
+const HARD_DISCARD_PATTERNS = [
+  "no me interesa",
+  "no quiero",
+  "ya no",
+  "no deseo",
+  "por ahora no",
+  "no gracias",
+  "gracias igual",
+  "dejalo asi",
+  "deje asi",
+  "cancela",
+  "cancelar",
+  "no voy a comprar",
+  "no comprare",
+  "no compraré",
+  "no necesito",
+  "solo estaba consultando",
+  "era solo consulta",
+  "no me escriba",
+  "no me contactes",
+  "deja de escribir",
+  "no molestar",
+  "no insista",
+  "no insistas",
+];
+
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isHardDiscardConversation(msgs: Message[]): { discard: boolean; reason?: string } {
+  const lastInbound = [...msgs].reverse().find((m) => m.direction === "in");
+  if (!lastInbound?.text) return { discard: false };
+
+  const inboundText = normalize(lastInbound.text);
+  const matched = HARD_DISCARD_PATTERNS.find((pattern) => inboundText.includes(pattern));
+  if (!matched) return { discard: false };
+
+  return { discard: true, reason: matched };
+}
 
 export function initFollowUp(
   _sendToWhatsApp: (to: string, type: "text" | "image" | "interactive", content: any) => Promise<any>,
@@ -62,6 +109,14 @@ async function checkAndSendFollowUps() {
       if (!lastInbound?.createdAt) continue;
       const lastInboundTs = new Date(lastInbound.createdAt).getTime();
       if (lastInboundTs < window24hStart.getTime()) continue;
+
+      const discard = isHardDiscardConversation(msgs);
+      if (discard.discard) {
+        console.log(
+          `[FollowUp] Skipped conv ${conv.id} by hard-discard filter (${discard.reason})`,
+        );
+        continue;
+      }
 
       if (!sendAiResponseFn) continue;
 

@@ -413,7 +413,8 @@ const tabConfig: { key: TabType; label: string; shortLabel: string; icon: typeof
 ];
 
 export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange, onLoadMore, hasMoreConversations, maxDays, searchQuery, onSearchChange, onClearSearch }: KanbanViewProps) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAgent } = useAuth();
+  const canDragKanban = isAdmin || isAgent;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -574,7 +575,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   }, [mobileTab]);
 
   const handleDragStartCard = (conversationId: number) => {
-    if (!isAdmin) return;
+    if (!canDragKanban) return;
     setDraggingConversationId(conversationId);
   };
 
@@ -588,7 +589,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   };
 
   const handleDropOnColumn = (targetColumn: TabType) => {
-    if (!isAdmin || draggingConversationId === null) return;
+    if (!canDragKanban || draggingConversationId === null) return;
     const conversation = conversations.find((c) => c.id === draggingConversationId);
     if (!conversation) {
       handleDragEndCard();
@@ -826,7 +827,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             labels={labels}
             showAgentAssignment={isAdmin}
             getAssignedAgentName={getAssignedAgentName}
-            enableDrag={isAdmin}
+            enableDrag={canDragKanban}
             draggingConversationId={draggingConversationId}
             isDropTarget={dragOverColumn === "humano"}
             onDragStartCard={handleDragStartCard}
@@ -843,7 +844,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             labels={labels}
             showAgentAssignment={isAdmin}
             getAssignedAgentName={getAssignedAgentName}
-            enableDrag={isAdmin}
+            enableDrag={canDragKanban}
             draggingConversationId={draggingConversationId}
             isDropTarget={dragOverColumn === "nuevo"}
             onDragStartCard={handleDragStartCard}
@@ -860,7 +861,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             labels={labels}
             showAgentAssignment={isAdmin}
             getAssignedAgentName={getAssignedAgentName}
-            enableDrag={isAdmin}
+            enableDrag={canDragKanban}
             draggingConversationId={draggingConversationId}
             isDropTarget={dragOverColumn === "llamar"}
             onDragStartCard={handleDragStartCard}
@@ -877,7 +878,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             labels={labels}
             showAgentAssignment={isAdmin}
             getAssignedAgentName={getAssignedAgentName}
-            enableDrag={isAdmin}
+            enableDrag={canDragKanban}
             draggingConversationId={draggingConversationId}
             isDropTarget={dragOverColumn === "proceso"}
             onDragStartCard={handleDragStartCard}
@@ -894,7 +895,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             labels={labels}
             showAgentAssignment={isAdmin}
             getAssignedAgentName={getAssignedAgentName}
-            enableDrag={isAdmin}
+            enableDrag={canDragKanban}
             draggingConversationId={draggingConversationId}
             isDropTarget={dragOverColumn === "listo"}
             onDragStartCard={handleDragStartCard}
@@ -911,7 +912,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             labels={labels}
             showAgentAssignment={isAdmin}
             getAssignedAgentName={getAssignedAgentName}
-            enableDrag={isAdmin}
+            enableDrag={canDragKanban}
             draggingConversationId={draggingConversationId}
             isDropTarget={dragOverColumn === "entregado"}
             onDragStartCard={handleDragStartCard}

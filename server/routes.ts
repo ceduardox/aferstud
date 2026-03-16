@@ -130,6 +130,7 @@ interface PushNotificationPreferences {
   notifyPending: boolean;
 }
 let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
+let agentAiColumnEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 
 function normalizeInboundText(text: string): string {
@@ -290,6 +291,15 @@ async function updatePushNotificationPreferences(next: PushNotificationPreferenc
   `);
   pushSettingsCache = { settings: next, loadedAt: Date.now() };
   return next;
+}
+
+async function ensureAgentAiColumnExists() {
+  if (agentAiColumnEnsured) return;
+  await db.execute(sql`
+    ALTER TABLE agents
+    ADD COLUMN IF NOT EXISTS is_ai_auto_reply_enabled BOOLEAN NOT NULL DEFAULT true
+  `);
+  agentAiColumnEnsured = true;
 }
 
 async function getPromptProfiles() {
@@ -3218,6 +3228,7 @@ Máximo 2 líneas. Sé específico y práctico.`;
   // === AGENT MANAGEMENT (Admin only) ===
   app.get("/api/agents/ai-column-status", requireAdmin, async (_req, res) => {
     try {
+      await ensureAgentAiColumnExists();
       const result = await db.execute(sql`
         SELECT EXISTS (
           SELECT 1
@@ -3236,6 +3247,7 @@ Máximo 2 líneas. Sé específico y práctico.`;
 
   app.get("/api/agents", requireAdmin, async (req, res) => {
     try {
+      await ensureAgentAiColumnExists();
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;

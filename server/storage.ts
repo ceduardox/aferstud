@@ -114,6 +114,7 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   private reminderColumnsEnsured = false;
+  private agentAiColumnEnsured = false;
 
   private mapFallbackAgentRow(row: any): Agent {
     return {
@@ -163,6 +164,15 @@ export class DatabaseStorage implements IStorage {
       ADD COLUMN IF NOT EXISTS reminder_updated_at TIMESTAMP
     `);
     this.reminderColumnsEnsured = true;
+  }
+
+  private async ensureAgentAiColumn(): Promise<void> {
+    if (this.agentAiColumnEnsured) return;
+    await db.execute(sql`
+      ALTER TABLE agents
+      ADD COLUMN IF NOT EXISTS is_ai_auto_reply_enabled BOOLEAN NOT NULL DEFAULT true
+    `);
+    this.agentAiColumnEnsured = true;
   }
 
   private async getAssignmentCursor(): Promise<number> {
@@ -448,6 +458,7 @@ export class DatabaseStorage implements IStorage {
 
   // Agents
   async getAgents(): Promise<Agent[]> {
+    await this.ensureAgentAiColumn();
     try {
       return await db.select().from(agents).orderBy(asc(agents.name));
     } catch (error) {
@@ -470,6 +481,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAgent(id: number): Promise<Agent | undefined> {
+    await this.ensureAgentAiColumn();
     try {
       const [agent] = await db.select().from(agents).where(eq(agents.id, id));
       return agent;
@@ -495,6 +507,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAgentByUsername(username: string): Promise<Agent | undefined> {
+    await this.ensureAgentAiColumn();
     try {
       const [agent] = await db.select().from(agents).where(eq(agents.username, username));
       return agent;
@@ -520,6 +533,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAgent(agent: InsertAgent): Promise<Agent> {
+    await this.ensureAgentAiColumn();
     try {
       const [created] = await db.insert(agents).values(agent).returning();
       return created;
@@ -545,6 +559,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAgent(id: number, agent: Partial<InsertAgent>): Promise<Agent> {
+    await this.ensureAgentAiColumn();
     try {
       const [updated] = await db.update(agents).set(agent).where(eq(agents.id, id)).returning();
       return updated;
@@ -601,6 +616,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActiveAgents(): Promise<Agent[]> {
+    await this.ensureAgentAiColumn();
     try {
       return await db.select().from(agents).where(eq(agents.isActive, true)).orderBy(asc(agents.name));
     } catch (error) {

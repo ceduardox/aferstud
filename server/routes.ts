@@ -153,6 +153,14 @@ function getConversationPushOptions(conversation?: { assignedAgentId?: number | 
   return targetExternalId ? { targetExternalIds: [targetExternalId] } : undefined;
 }
 
+function getPushTargetUrl(data?: Record<string, string>) {
+  const conversationId = data?.conversationId;
+  if (conversationId && /^\d+$/.test(conversationId)) {
+    return `https://ryzapp.org/?conversationId=${conversationId}`;
+  }
+  return "https://ryzapp.org/";
+}
+
 function isGenericFirstContactTrigger(text: string): boolean {
   const normalized = normalizeInboundText(text);
   if (!normalized) return false;
@@ -1077,6 +1085,7 @@ async function sendPushNotification(
   const event = data?.event || "unknown";
   const uniqueTopic = `${event}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const targetExternalIds = options?.targetExternalIds?.filter(Boolean) || [];
+  const targetUrl = getPushTargetUrl(data);
 
   console.log("[OneSignal] Attempting to send notification:", { title, message });
   console.log("[OneSignal] API Key configured:", !!apiKey);
@@ -1101,7 +1110,7 @@ async function sendPushNotification(
       headings: { en: title },
       contents: { en: message },
       data: data || {},
-      url: "https://ryzapp.org/",
+      url: targetUrl,
       chrome_web_icon: "https://ryzapp.org/icon-512.png",
       web_push_topic: uniqueTopic,
       ttl: 60,
@@ -1148,7 +1157,7 @@ async function sendPushNotification(
             headings: { en: title },
             contents: { en: message },
             data: data || {},
-            url: "https://ryzapp.org/",
+            url: targetUrl,
             chrome_web_icon: "https://ryzapp.org/icon-512.png",
             web_push_topic: uniqueTopic,
             ttl: 60,

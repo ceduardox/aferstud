@@ -1,41 +1,34 @@
-function extractConversationIdFromNotification(notification) {
-  const data = notification?.data || {};
-  const custom = data?.custom || {};
-  const additional = custom?.a || {};
-  const candidate = data?.conversationId || additional?.conversationId;
-  const id = Number(candidate);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
+importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
-function extractTargetUrlFromNotification(notification, conversationId) {
+function extractTargetUrlFromNotification(notification) {
   const data = notification?.data || {};
   const custom = data?.custom || {};
   const additional = custom?.a || {};
-  const rawUrl =
+  return (
     data?.url ||
     data?.deep_link ||
     custom?.u ||
     additional?.url ||
-    "";
+    "/"
+  );
+}
 
-  if (rawUrl) {
-    return new URL(rawUrl, self.location.origin).toString();
+function extractConversationId(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl, self.location.origin);
+    const raw = parsed.searchParams.get("conversationId");
+    if (!raw) return null;
+    const id = Number(raw);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
   }
-
-  if (conversationId) {
-    return new URL(`/?conversationId=${conversationId}`, self.location.origin).toString();
-  }
-
-  return new URL("/", self.location.origin).toString();
 }
 
 self.addEventListener("notificationclick", (event) => {
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  event.notification?.close?.();
-
-  const conversationId = extractConversationIdFromNotification(event.notification);
-  const resolvedUrl = extractTargetUrlFromNotification(event.notification, conversationId);
+  const targetUrl = extractTargetUrlFromNotification(event.notification);
+  const resolvedUrl = new URL(targetUrl, self.location.origin).toString();
+  const conversationId = extractConversationId(resolvedUrl);
 
   event.waitUntil(
     (async () => {
@@ -63,5 +56,3 @@ self.addEventListener("notificationclick", (event) => {
     })(),
   );
 });
-
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");

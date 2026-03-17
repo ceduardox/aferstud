@@ -1513,9 +1513,7 @@ export async function registerRoutes(
       proxy: true,
       store: new PgSessionStore({
         pool,
-        tableName: "user_sessions",
         createTableIfMissing: true,
-        pruneSessionInterval: 60 * 15,
         errorLog: (error) => console.error("Session store error:", error),
       }),
     })
@@ -1871,7 +1869,13 @@ export async function registerRoutes(
       (req.session as any).authenticated = true;
       (req.session as any).username = username;
       (req.session as any).role = "admin";
-      res.json({ success: true });
+      req.session.save((error: any) => {
+        if (error) {
+          console.error("Error saving admin session:", error);
+          return res.status(500).json({ message: "No se pudo guardar la sesiÃ³n" });
+        }
+        res.json({ success: true });
+      });
     } else {
       const agent = await storage.getAgentByUsername(username);
       if (agent && agent.password === password) {
@@ -1879,7 +1883,13 @@ export async function registerRoutes(
         (req.session as any).username = agent.name;
         (req.session as any).role = "agent";
         (req.session as any).agentId = agent.id;
-        res.json({ success: true });
+        req.session.save((error: any) => {
+          if (error) {
+            console.error("Error saving agent session:", error);
+            return res.status(500).json({ message: "No se pudo guardar la sesiÃ³n" });
+          }
+          res.json({ success: true });
+        });
       } else {
         res.status(401).json({ message: "Invalid credentials" });
       }

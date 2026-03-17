@@ -1118,25 +1118,16 @@ async function sendPushNotification(
   }
 
   try {
-    const normalizedConversationId = typeof data?.conversationId === "string" && /^\d+$/.test(data.conversationId)
-      ? data.conversationId
-      : undefined;
-    const payloadData = {
-      ...(data || {}),
-      ...(normalizedConversationId ? { conversationId: normalizedConversationId } : {}),
-    };
     const payload: Record<string, any> = {
       app_id: appId,
       headings: { en: title },
       contents: { en: message },
-      data: payloadData,
+      data: data || {},
+      url: targetUrl,
       chrome_web_icon: "https://ryzapp.org/icon-512.png",
       web_push_topic: uniqueTopic,
       ttl: 60,
     };
-    if (!normalizedConversationId) {
-      payload.url = targetUrl;
-    }
 
     if (targetExternalIds.length > 0) {
       payload.include_aliases = { external_id: targetExternalIds };

@@ -366,6 +366,9 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     const candidates = [
       "audio/ogg;codecs=opus",
       "audio/ogg",
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
     ];
     for (const candidate of candidates) {
       if (MediaRecorder.isTypeSupported(candidate)) return candidate;
@@ -444,29 +447,12 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           return;
         }
 
-        if (finalMimeType.startsWith("audio/webm")) {
-          toast({
-            title: "Formato no compatible",
-            description: "Esta grabacion salio en WEBM y WhatsApp puede rechazarla. Usa Audio (archivo) en MP3/M4A/OGG.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        if (!finalMimeType.includes("ogg")) {
-          toast({
-            title: "Grabacion incompatible",
-            description: "La grabacion no salio en OGG/Opus. Usa Audio (archivo) en MP3/M4A.",
-            variant: "destructive",
-          });
-          return;
-        }
-
         const extension =
           finalMimeType.includes("ogg") ? "ogg" :
+          finalMimeType.includes("webm") ? "webm" :
           finalMimeType.includes("mp4") || finalMimeType.includes("m4a") ? "m4a" :
           finalMimeType.includes("mpeg") || finalMimeType.includes("mp3") ? "mp3" :
-          "ogg";
+          "webm";
 
         const file = new File([blob], `grabacion-${Date.now()}.${extension}`, { type: finalMimeType });
         if (filePreview) {

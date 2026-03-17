@@ -469,43 +469,23 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
     return agentNameById.get(assignedAgentId) || null;
   };
 
-  const openConversationById = (rawId: string | number | null | undefined) => {
-    if (rawId === null || rawId === undefined) return false;
-    const conversationId = typeof rawId === "number" ? rawId : Number(rawId);
-    if (!Number.isInteger(conversationId) || conversationId <= 0) return false;
-    setActiveId(conversationId);
-    return true;
-  };
-
   useEffect(() => {
     if (hasAppliedUrlConversation.current) return;
     hasAppliedUrlConversation.current = true;
 
     const params = new URLSearchParams(window.location.search);
     const rawId = params.get("conversationId");
-    if (!openConversationById(rawId)) return;
+    if (!rawId) return;
+
+    const conversationId = Number(rawId);
+    if (!Number.isInteger(conversationId) || conversationId <= 0) return;
+
+    setActiveId(conversationId);
 
     params.delete("conversationId");
     const cleanQuery = params.toString();
     const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
     window.history.replaceState(window.history.state, "", cleanUrl);
-  }, []);
-
-  useEffect(() => {
-    const onOpenConversation = (event: Event) => {
-      const customEvent = event as CustomEvent<{ conversationId?: number }>;
-      const conversationId = customEvent?.detail?.conversationId;
-      if (!openConversationById(conversationId)) return;
-
-      const params = new URLSearchParams(window.location.search);
-      params.delete("conversationId");
-      const cleanQuery = params.toString();
-      const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
-      window.history.replaceState(window.history.state, "", cleanUrl);
-    };
-
-    window.addEventListener("ryz:open-conversation", onOpenConversation as EventListener);
-    return () => window.removeEventListener("ryz:open-conversation", onOpenConversation as EventListener);
   }, []);
 
   const getConversationColumn = (conv: Conversation): TabType => {

@@ -1145,7 +1145,7 @@ export default function AIAgentPage() {
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     data-testid="input-product-name"
-                    className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                    className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                   />
                 </div>
                 <div>
@@ -1155,7 +1155,7 @@ export default function AIAgentPage() {
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
                     data-testid="input-product-price"
-                    className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                    className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                   />
                 </div>
               </div>
@@ -1166,7 +1166,7 @@ export default function AIAgentPage() {
                   value={newKeywords}
                   onChange={(e) => setNewKeywords(e.target.value)}
                   data-testid="input-product-keywords"
-                  className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                  className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                 />
               </div>
               <div>
@@ -1177,7 +1177,7 @@ export default function AIAgentPage() {
                   onChange={(e) => setNewDescription(e.target.value)}
                   rows={2}
                   data-testid="textarea-product-description"
-                  className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                  className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                 />
               </div>
               <div className="space-y-3">
@@ -1189,7 +1189,7 @@ export default function AIAgentPage() {
                       value={newImageUrl}
                       onChange={(e) => setNewImageUrl(e.target.value)}
                       data-testid="input-product-image-main"
-                      className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                     />
                     <Input
                       type="file"
@@ -1211,7 +1211,7 @@ export default function AIAgentPage() {
                       value={newImageBottleUrl}
                       onChange={(e) => setNewImageBottleUrl(e.target.value)}
                       data-testid="input-product-image-bottle"
-                      className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                     />
                     <Input
                       type="file"
@@ -1233,7 +1233,7 @@ export default function AIAgentPage() {
                       value={newImageDoseUrl}
                       onChange={(e) => setNewImageDoseUrl(e.target.value)}
                       data-testid="input-product-image-dose"
-                      className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                     />
                     <Input
                       type="file"
@@ -1255,7 +1255,7 @@ export default function AIAgentPage() {
                       value={newImageIngredientsUrl}
                       onChange={(e) => setNewImageIngredientsUrl(e.target.value)}
                       data-testid="input-product-image-ingredients"
-                      className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                     />
                     <Input
                       type="file"
@@ -1295,14 +1295,14 @@ export default function AIAgentPage() {
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             data-testid={`input-edit-name-${product.id}`}
-                            className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                           />
                           <Input
                             placeholder="Precio"
                             value={editPrice}
                             onChange={(e) => setEditPrice(e.target.value)}
                             data-testid={`input-edit-price-${product.id}`}
-                            className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                           />
                         </div>
                         <Input
@@ -1310,7 +1310,7 @@ export default function AIAgentPage() {
                           value={editKeywords}
                           onChange={(e) => setEditKeywords(e.target.value)}
                           data-testid={`input-edit-keywords-${product.id}`}
-                          className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                          className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                         />
                         <Textarea
                           placeholder="Descripción"
@@ -1318,7 +1318,7 @@ export default function AIAgentPage() {
                           onChange={(e) => setEditDescription(e.target.value)}
                           rows={2}
                           data-testid={`textarea-edit-description-${product.id}`}
-                          className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                          className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                         />
                         <div className="grid gap-2 sm:grid-cols-2">
                           <Input
@@ -1326,7 +1326,7 @@ export default function AIAgentPage() {
                             value={editImageUrl}
                             onChange={(e) => setEditImageUrl(e.target.value)}
                             data-testid={`input-edit-image-main-${product.id}`}
-                            className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                           />
                           <Input
                             type="file"
@@ -1346,7 +1346,7 @@ export default function AIAgentPage() {
                             value={editImageBottleUrl}
                             onChange={(e) => setEditImageBottleUrl(e.target.value)}
                             data-testid={`input-edit-image-bottle-${product.id}`}
-                            className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                           />
                           <Input
                             type="file"
@@ -1366,7 +1366,7 @@ export default function AIAgentPage() {
                             value={editImageDoseUrl}
                             onChange={(e) => setEditImageDoseUrl(e.target.value)}
                             data-testid={`input-edit-image-dose-${product.id}`}
-                            className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                           />
                           <Input
                             type="file"
@@ -1386,7 +1386,7 @@ export default function AIAgentPage() {
                             value={editImageIngredientsUrl}
                             onChange={(e) => setEditImageIngredientsUrl(e.target.value)}
                             data-testid={`input-edit-image-ingredients-${product.id}`}
-                            className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300"
+                            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                           />
                           <Input
                             type="file"

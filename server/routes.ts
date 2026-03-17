@@ -21,6 +21,7 @@ import ffmpegStatic from "ffmpeg-static";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
+const uploadDocument = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
@@ -2240,6 +2241,91 @@ export async function registerRoutes(
       const details = error.response?.data?.error?.message || error.response?.data?.message || error.message;
       console.error("Audio upload error:", error.response?.data || error.message);
       res.status(500).json({ message: "Failed to send audio", error: details });
+    }
+  });
+
+  app.post("/api/send-document", requireAuth, uploadDocument.single("document"), async (req, res) => {
+    try {
+      const file = req.file;
+      const to = req.body.to;
+      const caption = req.body.caption || undefined;
+
+      if (!file || !to) {
+        return res.status(400).json({ message: "Missing document or recipient" });
+      }
+
+      const normalizedMimeType = String(file.mimetype || "").toLowerCase();
+      const normalizedFileName = String(file.originalname || "").toLowerCase();
+      const isPdf = normalizedMimeType === "application/pdf" || normalizedFileName.endsWith(".pdf");
+      if (!isPdf) {
+        return res.status(400).json({ message: "Formato no soportado. Solo PDF." });
+      }
+
+      const token = process.env.META_ACCESS_TOKEN;
+      const phoneId = process.env.WA_PHONE_NUMBER_ID;
+      if (!token || !phoneId) {
+        return res.status(500).json({ message: "Missing Meta configuration" });
+      }
+
+      const safeFileName = file.originalname?.trim() || `documento-${Date.now()}.pdf`;
+      const FormData = (await import("form-data")).default;
+      const formData = new FormData();
+      formData.append("file", file.buffer, { filename: safeFileName, contentType: "application/pdf" });
+      formData.append("messaging_product", "whatsapp");
+      formData.append("type", "application/pdf");
+
+      const uploadRes = await axios.post(
+        `https://graph.facebook.com/v24.0/${phoneId}/media`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}`, ...formData.getHeaders() } }
+      );
+      const mediaId = uploadRes.data.id;
+
+      const formattedTo = to.startsWith('+') ? to : `+${to}`;
+      const payload: any = {
+        messaging_product: "whatsapp",
+        to: formattedTo,
+        type: "document",
+        document: { id: mediaId, filename: safeFileName },
+      };
+      if (caption) payload.document.caption = caption;
+
+      const waResponse = await axios.post(
+        `https://graph.facebook.com/v24.0/${phoneId}/messages`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+      );
+      const waMessageId = waResponse.data.messages[0].id;
+      const waMessageStatus = waResponse.data.messages[0]?.message_status || null;
+
+      const normalizedTo = to.replace(/^\+/, "");
+      let conversation = await storage.getConversationByWaId(normalizedTo);
+      const lastMessageText = `[pdf] ${safeFileName}`;
+      if (!conversation) {
+        conversation = await storage.createConversation({
+          waId: normalizedTo, contactName: normalizedTo,
+          lastMessage: lastMessageText, lastMessageTimestamp: new Date(),
+        });
+      } else {
+        await storage.updateConversation(conversation.id, {
+          lastMessage: lastMessageText, lastMessageTimestamp: new Date(),
+        });
+      }
+
+      await storage.createMessage({
+        conversationId: conversation.id, waMessageId,
+        direction: "out", type: "document",
+        text: lastMessageText,
+        mediaId, mimeType: "application/pdf",
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent", rawJson: waResponse.data,
+      });
+
+      res.json({ success: true, messageId: waMessageId, messageStatus: waMessageStatus });
+    } catch (error: any) {
+      const details = error.response?.data?.error?.message || error.response?.data?.message || error.message;
+      console.error("Document upload error:", error.response?.data || error.message);
+      res.status(500).json({ message: "Failed to send document", error: details });
     }
   });
 

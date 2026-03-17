@@ -7,19 +7,6 @@ function extractConversationIdFromNotification(notification) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-function extractConversationIdFromUrl(url) {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url, self.location.origin);
-    const raw = parsed.searchParams.get("conversationId");
-    if (!raw) return null;
-    const id = Number(raw);
-    return Number.isInteger(id) && id > 0 ? id : null;
-  } catch {
-    return null;
-  }
-}
-
 function extractTargetUrlFromNotification(notification, conversationId) {
   const data = notification?.data || {};
   const custom = data?.custom || {};
@@ -47,9 +34,8 @@ self.addEventListener("notificationclick", (event) => {
   event.stopImmediatePropagation();
   event.notification?.close?.();
 
-  const conversationIdFromData = extractConversationIdFromNotification(event.notification);
-  const resolvedUrl = extractTargetUrlFromNotification(event.notification, conversationIdFromData);
-  const conversationId = conversationIdFromData || extractConversationIdFromUrl(resolvedUrl);
+  const conversationId = extractConversationIdFromNotification(event.notification);
+  const resolvedUrl = extractTargetUrlFromNotification(event.notification, conversationId);
 
   event.waitUntil(
     (async () => {

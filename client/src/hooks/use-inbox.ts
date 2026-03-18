@@ -18,6 +18,7 @@ export function useConversations(limit?: number, before?: string) {
       if (!res.ok) throw new Error("Failed to fetch conversations");
       return api.conversations.list.responses[200].parse(await res.json());
     },
+    placeholderData: (previousData) => previousData,
     refetchInterval: POLL_INTERVAL,
     staleTime: 5 * 1000,
   });

@@ -75,7 +75,10 @@ interface ColumnProps {
   onDragEndCard: () => void;
   onDragOverColumn: (columnType: TabType) => void;
   onDropOnColumn: (columnType: TabType) => void;
+  unreadIds: Set<number>;
 }
+
+const KANBAN_READ_STATE_KEY = "ryzapp_kanban_read_state_v1";
 
 interface AgentListItem {
   id: number;
@@ -107,6 +110,35 @@ function formatDate(timestamp: Date | string | null): string {
   return `${monthNames[date.getMonth()]} ${date.getDate()}, ${timeStr}`;
 }
 
+function readKanbanReadState(): Record<number, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(KANBAN_READ_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    const normalized: Record<number, number> = {};
+    for (const [key, value] of Object.entries(parsed || {})) {
+      const id = Number(key);
+      const ts = Number(value);
+      if (Number.isInteger(id) && id > 0 && Number.isFinite(ts) && ts > 0) {
+        normalized[id] = ts;
+      }
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function persistKanbanReadState(state: Record<number, number>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(KANBAN_READ_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function KanbanCard({ 
   conv, 
   isActive, 
@@ -119,6 +151,7 @@ function KanbanCard({
   isDragging,
   onDragStartCard,
   onDragEndCard,
+  isUnread,
 }: { 
   conv: Conversation; 
   isActive: boolean; 
@@ -131,6 +164,7 @@ function KanbanCard({
   isDragging: boolean;
   onDragStartCard: (conversationId: number) => void;
   onDragEndCard: () => void;
+  isUnread: boolean;
 }) {
   const name = conv.contactName || conv.waId;
   
@@ -190,17 +224,24 @@ function KanbanCard({
       onDragEnd={onDragEndCard}
       onClick={onSelect}
       className={cn(
-        "rounded-xl p-4 cursor-pointer backdrop-blur-sm select-none",
+        "relative rounded-xl p-4 cursor-pointer backdrop-blur-sm select-none",
         enableDrag && "cursor-grab active:cursor-grabbing",
         "border border-slate-700/50 shadow-lg shadow-black/20",
         "transition-transform duration-100 active:scale-[0.97]",
         getCardStyle(),
         isActive && "ring-2 ring-emerald-500/50 shadow-emerald-500/20",
         isUrgent && "animate-ring-pulse",
-        isDragging && "opacity-40 scale-[0.98]"
+        isDragging && "opacity-40 scale-[0.98]",
+        isUnread && "shadow-cyan-500/10"
       )}
       data-testid={`kanban-card-${conv.id}`}
     >
+      {isUnread && (
+        <div
+          className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-cyan-400/90 shadow-[0_0_12px_rgba(34,211,238,0.6)]"
+          aria-hidden="true"
+        />
+      )}
       <div className="flex items-start gap-3">
         <div className={cn(
           "w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-lg",
@@ -293,7 +334,7 @@ function KanbanCard({
   );
 }
 
-function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, showAgentAssignment, getAssignedAgentName, enableDrag, draggingConversationId, isDropTarget, onDragStartCard, onDragEndCard, onDragOverColumn, onDropOnColumn }: ColumnProps) {
+function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, showAgentAssignment, getAssignedAgentName, enableDrag, draggingConversationId, isDropTarget, onDragStartCard, onDragEndCard, onDragOverColumn, onDropOnColumn, unreadIds }: ColumnProps) {
   const getColumnHeaderStyle = () => {
     switch (columnType) {
       case "humano":
@@ -399,6 +440,7 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
               isDragging={draggingConversationId === conv.id}
               onDragStartCard={onDragStartCard}
               onDragEndCard={onDragEndCard}
+              isUnread={unreadIds.has(conv.id) && (columnType === "nuevo" || columnType === "proceso")}
             />
           ))
         )}
@@ -424,6 +466,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [readStateByConversation, setReadStateByConversation] = useState<Record<number, number>>(() => readKanbanReadState());
   const [mobileTab, setMobileTab] = useState<TabType>("nuevo");
   const [filterLabelId, setFilterLabelId] = useState<number | null>(null);
   const [draggingConversationId, setDraggingConversationId] = useState<number | null>(null);
@@ -469,6 +512,37 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
     return agentNameById.get(assignedAgentId) || null;
   };
 
+  const markConversationRead = (conversationId: number, lastMessageTimestamp?: Date | string | null) => {
+    const ts = lastMessageTimestamp ? new Date(lastMessageTimestamp).getTime() : Date.now();
+    if (!Number.isFinite(ts) || ts <= 0) return;
+    setReadStateByConversation((prev) => {
+      if ((prev[conversationId] || 0) >= ts) return prev;
+      const next = { ...prev, [conversationId]: ts };
+      persistKanbanReadState(next);
+      return next;
+    });
+  };
+
+  const unreadIds = useMemo(() => {
+    const unread = new Set<number>();
+    for (const conv of conversations) {
+      const lastTs = conv.lastMessageTimestamp ? new Date(conv.lastMessageTimestamp).getTime() : 0;
+      const seenTs = readStateByConversation[conv.id] || 0;
+      if (lastTs > 0 && lastTs > seenTs) {
+        unread.add(conv.id);
+      }
+    }
+    return unread;
+  }, [conversations, readStateByConversation]);
+
+  const handleSelectConversation = (id: number) => {
+    const selected = conversations.find((conv) => conv.id === id);
+    if (selected) {
+      markConversationRead(id, selected.lastMessageTimestamp);
+    }
+    setActiveId(id);
+  };
+
   useEffect(() => {
     if (hasAppliedUrlConversation.current) return;
     hasAppliedUrlConversation.current = true;
@@ -480,13 +554,19 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
     const conversationId = Number(rawId);
     if (!Number.isInteger(conversationId) || conversationId <= 0) return;
 
-    setActiveId(conversationId);
+    handleSelectConversation(conversationId);
 
     params.delete("conversationId");
     const cleanQuery = params.toString();
     const cleanUrl = cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname;
     window.history.replaceState(window.history.state, "", cleanUrl);
-  }, []);
+  }, [conversations]);
+
+  useEffect(() => {
+    if (activeId && activeConversation?.conversation) {
+      markConversationRead(activeId, activeConversation.conversation.lastMessageTimestamp);
+    }
+  }, [activeId, activeConversation?.conversation?.lastMessageTimestamp]);
 
   const getConversationColumn = (conv: Conversation): TabType => {
     if (conv.needsHumanAttention) return "humano";
@@ -832,23 +912,24 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
           </div>
         ) : (
           <>
-            <KanbanColumn
-              title={columnData[mobileTab].title}
-              items={columnData[mobileTab].items}
-              activeId={activeId}
-              onSelect={setActiveId}
-              columnType={mobileTab}
-              labels={labels}
-              showAgentAssignment={isAdmin}
-              getAssignedAgentName={getAssignedAgentName}
-              enableDrag={false}
+              <KanbanColumn
+                title={columnData[mobileTab].title}
+                items={columnData[mobileTab].items}
+                activeId={activeId}
+                onSelect={handleSelectConversation}
+                columnType={mobileTab}
+                labels={labels}
+                showAgentAssignment={isAdmin}
+                getAssignedAgentName={getAssignedAgentName}
+                enableDrag={false}
               draggingConversationId={draggingConversationId}
               isDropTarget={false}
-              onDragStartCard={handleDragStartCard}
-              onDragEndCard={handleDragEndCard}
-              onDragOverColumn={handleDragOverColumn}
-              onDropOnColumn={handleDropOnColumn}
-            />
+                onDragStartCard={handleDragStartCard}
+                onDragEndCard={handleDragEndCard}
+                onDragOverColumn={handleDragOverColumn}
+                onDropOnColumn={handleDropOnColumn}
+                unreadIds={unreadIds}
+              />
           </>
         )}
         </div>
@@ -861,7 +942,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             title="Interaccion Humana"
             items={humano}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             columnType="humano"
             labels={labels}
             showAgentAssignment={isAdmin}
@@ -873,12 +954,13 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragEndCard={handleDragEndCard}
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
+            unreadIds={unreadIds}
           />
           <KanbanColumn
             title="Esperando Confirmaci."
             items={nuevos}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             columnType="nuevo"
             labels={labels}
             showAgentAssignment={isAdmin}
@@ -890,12 +972,13 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragEndCard={handleDragEndCard}
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
+            unreadIds={unreadIds}
           />
           <KanbanColumn
             title="Llamar"
             items={llamar}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             columnType="llamar"
             labels={labels}
             showAgentAssignment={isAdmin}
@@ -907,12 +990,13 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragEndCard={handleDragEndCard}
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
+            unreadIds={unreadIds}
           />
           <KanbanColumn
             title="Pedido en Proceso"
             items={enProceso}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             columnType="proceso"
             labels={labels}
             showAgentAssignment={isAdmin}
@@ -924,12 +1008,13 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragEndCard={handleDragEndCard}
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
+            unreadIds={unreadIds}
           />
           <KanbanColumn
             title="Listo para Enviar"
             items={listos}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             columnType="listo"
             labels={labels}
             showAgentAssignment={isAdmin}
@@ -941,12 +1026,13 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragEndCard={handleDragEndCard}
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
+            unreadIds={unreadIds}
           />
           <KanbanColumn
             title="Enviados y Entregados"
             items={entregados}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             columnType="entregado"
             labels={labels}
             showAgentAssignment={isAdmin}
@@ -958,6 +1044,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragEndCard={handleDragEndCard}
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
+            unreadIds={unreadIds}
           />
         </div>
 

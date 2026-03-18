@@ -68,7 +68,7 @@ export function ConversationList({
 
   // Filter and sort: pinned first, then by timestamp
   const filteredConversations = conversations
-    .filter(c => !filterLabelId || c.labelId === filterLabelId)
+    .filter(c => !filterLabelId || c.labelId === filterLabelId || c.labelId2 === filterLabelId)
     .sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
@@ -141,7 +141,12 @@ export function ConversationList({
       ) : (
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
           {filteredConversations.map((conv) => {
-            const label = getLabelById(conv.labelId);
+            const conversationLabelIds = [conv.labelId, conv.labelId2].filter(
+              (value): value is number => typeof value === "number" && value > 0,
+            );
+            const conversationLabels = conversationLabelIds
+              .map((labelId) => getLabelById(labelId))
+              .filter((label): label is Label => Boolean(label));
             const orderConfig = conv.orderStatus ? ORDER_STATUS_CONFIG[conv.orderStatus] : null;
             const OrderIcon = orderConfig?.icon;
             
@@ -176,11 +181,11 @@ export function ConversationList({
                       )}>
                         {conv.contactName || conv.waId}
                       </span>
-                      {label && (
-                        <Badge className={cn("text-[10px] px-1.5 py-0 flex-shrink-0", LABEL_COLORS[label.color] || "bg-gray-500")}>
+                      {conversationLabels.slice(0, 2).map((label) => (
+                        <Badge key={label.id} className={cn("text-[10px] px-1.5 py-0 flex-shrink-0", LABEL_COLORS[label.color] || "bg-gray-500")}>
                           {label.name}
                         </Badge>
-                      )}
+                      ))}
                       {OrderIcon && (
                         <div className={cn("flex items-center gap-1 flex-shrink-0", orderConfig?.className)} title={orderConfig?.label}>
                           <OrderIcon className="h-4 w-4" />

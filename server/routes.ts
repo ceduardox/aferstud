@@ -171,6 +171,7 @@ interface PushNotificationPreferences {
 let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
 let agentAiColumnEnsured = false;
 let productImageColumnsEnsured = false;
+let conversationLabelColumnsEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
@@ -208,6 +209,15 @@ async function ensureProductImageColumnsExist() {
     ADD COLUMN IF NOT EXISTS image_ingredients_url TEXT
   `);
   productImageColumnsEnsured = true;
+}
+
+async function ensureConversationLabelColumnsExist() {
+  if (conversationLabelColumnsEnsured) return;
+  await db.execute(sql`
+    ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS label_id_2 INTEGER REFERENCES labels(id)
+  `);
+  conversationLabelColumnsEnsured = true;
 }
 
 function normalizeInboundText(text: string): string {
@@ -1538,6 +1548,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   await ensureProductImageColumnsExist();
+  await ensureConversationLabelColumnsExist();
 
   // === SESSION SETUP ===
   const SessionStore = MemoryStore(session);
@@ -2507,19 +2518,34 @@ export async function registerRoutes(
   // Set conversation label
   app.patch("/api/conversations/:id/label", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
-    const { labelId } = req.body;
-    const nextLabelId = labelId ? Number(labelId) : null;
+    const session = req.session as any;
+    const rawLabelIds: any[] = Array.isArray(req.body?.labelIds)
+      ? req.body.labelIds
+      : req.body?.labelId
+        ? [req.body.labelId]
+        : [];
 
-    if (nextLabelId !== null && !Number.isInteger(nextLabelId)) {
+    const parsedLabelIds: number[] = Array.from(
+      new Set(
+        rawLabelIds
+          .map((labelId: any) => Number(labelId))
+          .filter((labelId: number) => Number.isInteger(labelId) && labelId > 0),
+      ),
+    );
+
+    if (rawLabelIds.length > 0 && parsedLabelIds.length === 0) {
       return res.status(400).json({ message: "Invalid label id" });
     }
 
-    if (nextLabelId !== null) {
-      const label = await storage.getLabel(nextLabelId);
+    if (parsedLabelIds.length > 2) {
+      return res.status(400).json({ message: "Solo se permiten 2 etiquetas por conversación" });
+    }
+
+    for (const labelId of parsedLabelIds) {
+      const label = await storage.getLabel(labelId);
       if (!label) {
         return res.status(404).json({ message: "Label not found" });
       }
-      const session = req.session as any;
       const isOwner = session.role === "agent"
         ? label.agentId === session.agentId
         : !label.agentId;
@@ -2528,7 +2554,11 @@ export async function registerRoutes(
       }
     }
 
-    const updated = await storage.updateConversation(id, { labelId: nextLabelId });
+    const [firstLabelId, secondLabelId] = parsedLabelIds;
+    const updated = await storage.updateConversation(id, {
+      labelId: firstLabelId ?? null,
+      labelId2: secondLabelId ?? null,
+    });
     res.json(updated);
   });
 
@@ -2762,6 +2792,7 @@ export async function registerRoutes(
         c.wa_id AS "waId",
         c.contact_name AS "contactName",
         c.label_id AS "labelId",
+        c.label_id_2 AS "labelId2",
         c.is_pinned AS "isPinned",
         c.order_status AS "orderStatus",
         c.ai_disabled AS "aiDisabled",

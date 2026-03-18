@@ -235,7 +235,12 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     enabled: isAdmin,
   });
 
-  const currentLabel = labelsData.find(l => l.id === conversation.labelId);
+  const currentLabelIds = [conversation.labelId, conversation.labelId2].filter(
+    (value): value is number => typeof value === "number" && value > 0,
+  );
+  const currentLabels = currentLabelIds
+    .map((labelId) => labelsData.find((label) => label.id === labelId))
+    .filter((label): label is Label => Boolean(label));
   const toDateTimeLocalValue = (value?: string | Date | null) => {
     if (!value) return "";
     const parsed = new Date(value);
@@ -615,18 +620,35 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   });
 
   const setLabelMutation = useMutation({
-    mutationFn: async (labelId: number | null) => {
+    mutationFn: async (labelIds: number[]) => {
       const res = await fetch(`/api/conversations/${conversation.id}/label`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labelId }),
+        body: JSON.stringify({ labelIds }),
       });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations/:id"] });
     },
   });
+
+  const toggleConversationLabel = (labelId: number) => {
+    const selected = [...currentLabelIds];
+    const existingIndex = selected.indexOf(labelId);
+    if (existingIndex >= 0) {
+      selected.splice(existingIndex, 1);
+      setLabelMutation.mutate(selected);
+      return;
+    }
+    if (selected.length >= 2) {
+      toast({ title: "Máximo 2 etiquetas", description: "Quite una etiqueta para agregar otra", variant: "destructive" });
+      return;
+    }
+    selected.push(labelId);
+    setLabelMutation.mutate(selected);
+  };
 
   const setReminderMutation = useMutation({
     mutationFn: async ({ reminderAt, reminderNote }: { reminderAt: string; reminderNote?: string }) => {
@@ -1153,15 +1175,16 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 +{conversation.waId}
               </button>
               <div className="flex items-center gap-1.5 md:hidden">
-                {currentLabel && (
+                {currentLabels.slice(0, 2).map((label) => (
                   <Badge
-                    className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}
-                    title={currentLabel.name}
-                    onClick={() => showFullLabelName(currentLabel.name)}
+                    key={label.id}
+                    className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === label.color)?.bg)}
+                    title={label.name}
+                    onClick={() => showFullLabelName(label.name)}
                   >
-                    {toCompactLabel(currentLabel.name)}
+                    {toCompactLabel(label.name)}
                   </Badge>
-                )}
+                ))}
                 {conversation.reminderAt && (
                   <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/90 text-white">
                     <Clock className="h-2.5 w-2.5 mr-1" />
@@ -1180,15 +1203,16 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
               {reminderBadgeText}
             </Badge>
           )}
-          {currentLabel && (
+          {currentLabels.slice(0, 2).map((label) => (
             <Badge
-              className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}
-              title={currentLabel.name}
-              onClick={() => showFullLabelName(currentLabel.name)}
+              key={label.id}
+              className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === label.color)?.bg)}
+              title={label.name}
+              onClick={() => showFullLabelName(label.name)}
             >
-              {toCompactLabel(currentLabel.name)}
+              {toCompactLabel(label.name)}
             </Badge>
-          )}
+          ))}
         </div>
         <div className="flex items-center justify-center gap-1 overflow-x-auto md:justify-end md:gap-0 md:overflow-visible">
         {/* Reassign Agent Dropdown (admin only) */}
@@ -1227,12 +1251,18 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setLabelMutation.mutate(null)}>
+              <DropdownMenuItem onClick={() => setLabelMutation.mutate([])}>
+                <span className={cn("mr-2 inline-flex", currentLabelIds.length === 0 ? "text-emerald-500" : "text-transparent")}>
+                  <Check className="h-3.5 w-3.5" />
+                </span>
                 Sin etiqueta
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {ownedLabels.map((label) => (
-                <DropdownMenuItem key={label.id} onClick={() => setLabelMutation.mutate(label.id)}>
+                <DropdownMenuItem key={label.id} onClick={() => toggleConversationLabel(label.id)}>
+                  <span className={cn("mr-2 inline-flex", currentLabelIds.includes(label.id) ? "text-emerald-500" : "text-transparent")}>
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
                   <div className={cn("w-3 h-3 rounded-full mr-2", LABEL_COLORS.find(c => c.name === label.color)?.bg)} />
                   {label.name}
                 </DropdownMenuItem>
@@ -1847,7 +1877,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           </div>
           <p>To: +{conversation.waId}</p>
           <p>Messages: {messages.length}</p>
-          <p>Label: {currentLabel?.name || 'None'}</p>
+          <p>Labels: {currentLabels.map((label) => label.name).join(", ") || "None"}</p>
         </div>
       )}
 

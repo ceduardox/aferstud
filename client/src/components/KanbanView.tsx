@@ -288,9 +288,11 @@ function KanbanCard({
             </div>
           )}
           
-          {conv.labelId && (() => {
-            const label = labels.find(l => l.id === conv.labelId);
-            if (!label) return null;
+          {(() => {
+            const labelIds = [conv.labelId, conv.labelId2].filter(
+              (value): value is number => typeof value === "number" && value > 0,
+            );
+            if (labelIds.length === 0) return null;
             const colorMap: Record<string, string> = {
               blue: "bg-blue-500/20 text-blue-400",
               green: "bg-green-500/20 text-green-400",
@@ -300,9 +302,21 @@ function KanbanCard({
               orange: "bg-orange-500/20 text-orange-400",
             };
             return (
-              <div className={cn("inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-xs font-medium", colorMap[label.color] || "bg-slate-500/20 text-slate-400")} data-testid={`text-label-${label.id}-conv-${conv.id}`}>
-                <Tag className="h-2.5 w-2.5" />
-                {label.name}
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                {labelIds.slice(0, 2).map((labelId) => {
+                  const label = labels.find((item) => item.id === labelId);
+                  if (!label) return null;
+                  return (
+                    <div
+                      key={label.id}
+                      className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", colorMap[label.color] || "bg-slate-500/20 text-slate-400")}
+                      data-testid={`text-label-${label.id}-conv-${conv.id}`}
+                    >
+                      <Tag className="h-2.5 w-2.5" />
+                      {label.name}
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
@@ -595,7 +609,9 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
     },
   });
 
-  const filtered = filterLabelId ? conversations.filter(c => c.labelId === filterLabelId) : conversations;
+  const filtered = filterLabelId
+    ? conversations.filter((c) => c.labelId === filterLabelId || c.labelId2 === filterLabelId)
+    : conversations;
 
   const humano = filtered.filter(c => c.needsHumanAttention);
   const entregados = filtered.filter(c => c.orderStatus === "delivered" && !c.needsHumanAttention);

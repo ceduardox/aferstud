@@ -163,6 +163,10 @@ export class DatabaseStorage implements IStorage {
       ALTER TABLE conversations
       ADD COLUMN IF NOT EXISTS reminder_updated_at TIMESTAMP
     `);
+    await db.execute(sql`
+      ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS label_id_2 INTEGER REFERENCES labels(id)
+    `);
     this.reminderColumnsEnsured = true;
   }
 
@@ -323,10 +327,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async clearLabelFromConversations(labelId: number): Promise<void> {
+    await this.ensureConversationReminderColumns();
     await db
       .update(conversations)
-      .set({ labelId: null, updatedAt: new Date() })
-      .where(eq(conversations.labelId, labelId));
+      .set({
+        labelId: sql`CASE WHEN ${conversations.labelId} = ${labelId} THEN NULL ELSE ${conversations.labelId} END`,
+        labelId2: sql`CASE WHEN ${conversations.labelId2} = ${labelId} THEN NULL ELSE ${conversations.labelId2} END`,
+        updatedAt: new Date(),
+      })
+      .where(sql`${conversations.labelId} = ${labelId} OR ${conversations.labelId2} = ${labelId}`);
   }
 
   async deleteLabel(id: number): Promise<void> {

@@ -35,6 +35,7 @@ export const conversations = pgTable("conversations", {
   waId: varchar("wa_id").notNull().unique(),
   contactName: text("contact_name"),
   labelId: integer("label_id").references(() => labels.id),
+  labelId2: integer("label_id_2").references(() => labels.id),
   isPinned: boolean("is_pinned").default(false),
   orderStatus: varchar("order_status", { length: 20 }),
   aiDisabled: boolean("ai_disabled").default(false),

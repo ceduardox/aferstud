@@ -147,11 +147,6 @@ export default function InboxPage() {
                   <ClipboardList className="h-5 w-5" />
                 </Button>
               </Link>
-              <Link href="/reminders">
-                <Button variant="ghost" size="icon" title="Recordatorios" data-testid="button-reminders-desktop" className="text-slate-400 hover:text-amber-400 hover:bg-amber-500/10">
-                  <Clock className="h-5 w-5" />
-                </Button>
-              </Link>
               <Link href="/agents">
                 <Button variant="ghost" size="icon" title="Agentes" data-testid="button-agents-desktop" className="text-slate-400 hover:text-violet-400 hover:bg-violet-500/10">
                   <Users className="h-5 w-5" />
@@ -160,6 +155,11 @@ export default function InboxPage() {
             </>
           )}
           <div className="h-6 w-px bg-slate-600 mx-2" />
+          <Link href="/reminders">
+            <Button variant="ghost" size="icon" title="Recordatorios" data-testid="button-reminders-desktop" className="text-slate-400 hover:text-amber-400 hover:bg-amber-500/10">
+              <Clock className="h-5 w-5" />
+            </Button>
+          </Link>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/50 border border-slate-600">
             <div className="h-2 w-2 bg-emerald-400 rounded-full animate-pulse" />
             <span className="text-sm text-slate-300 font-medium">{user?.username}</span>

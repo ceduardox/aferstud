@@ -137,11 +137,6 @@ export default function InboxPage() {
           </Link>
           {isAdmin && (
             <>
-              <Link href="/ai-agent">
-                <Button variant="ghost" size="icon" title="Agente IA" data-testid="button-ai-agent-desktop" className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10">
-                  <Bot className="h-5 w-5" />
-                </Button>
-              </Link>
               <Link href="/follow-up">
                 <Button variant="ghost" size="icon" title="Seguimiento" data-testid="button-follow-up-desktop" className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10">
                   <ClipboardList className="h-5 w-5" />
@@ -155,6 +150,11 @@ export default function InboxPage() {
             </>
           )}
           <div className="h-6 w-px bg-slate-600 mx-2" />
+          <Link href={iaHref}>
+            <Button variant="ghost" size="icon" title="IA" data-testid="button-ai-desktop" className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10">
+              <Bot className="h-5 w-5" />
+            </Button>
+          </Link>
           <Link href="/reminders">
             <Button variant="ghost" size="icon" title="Recordatorios" data-testid="button-reminders-desktop" className="text-slate-400 hover:text-amber-400 hover:bg-amber-500/10">
               <Clock className="h-5 w-5" />

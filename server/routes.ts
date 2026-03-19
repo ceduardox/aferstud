@@ -3640,6 +3640,10 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
         ${dateFrom ? sql`AND DATE(m.created_at AT TIME ZONE 'America/La_Paz') >= ${dateFrom}` : sql``}
         ${dateTo ? sql`AND DATE(m.created_at AT TIME ZONE 'America/La_Paz') <= ${dateTo}` : sql``}
       `;
+      const leadDateFilterSql = sql`
+        ${dateFrom ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE 'America/La_Paz') >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE 'America/La_Paz') <= ${dateTo}` : sql``}
+      `;
 
       let statsResult;
       try {
@@ -3655,6 +3659,7 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
           a.created_at AS "createdAt",
           COALESCE(s.assigned_conversations, 0) AS "assignedConversations",
           COALESCE(s.inbound_messages, 0) AS "inboundMessages",
+          COALESCE(s.new_leads, 0) AS "newLeads",
           COALESCE(s.should_call_count, 0) AS "shouldCallCount",
           s.last_activity_at AS "lastActivityAt"
         FROM agents a
@@ -3663,10 +3668,20 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
             c.assigned_agent_id AS agent_id,
             COUNT(DISTINCT c.id) AS assigned_conversations,
             COUNT(m.id) FILTER (WHERE m.direction = 'in') AS inbound_messages,
+            COUNT(DISTINCT c.id) FILTER (
+              WHERE fi.first_inbound_at IS NOT NULL
+              ${leadDateFilterSql}
+            ) AS new_leads,
             COUNT(DISTINCT c.id) FILTER (WHERE c.should_call = true) AS should_call_count,
             MAX(m.created_at) AS last_activity_at
           FROM conversations c
           LEFT JOIN messages m ON m.conversation_id = c.id
+          LEFT JOIN LATERAL (
+            SELECT MIN(m2.created_at) AS first_inbound_at
+            FROM messages m2
+            WHERE m2.conversation_id = c.id
+              AND m2.direction = 'in'
+          ) fi ON true
           WHERE c.assigned_agent_id IS NOT NULL
             ${dateFilterSql}
           GROUP BY c.assigned_agent_id
@@ -3688,6 +3703,7 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
               a.created_at AS "createdAt",
               COALESCE(s.assigned_conversations, 0) AS "assignedConversations",
               COALESCE(s.inbound_messages, 0) AS "inboundMessages",
+              COALESCE(s.new_leads, 0) AS "newLeads",
               COALESCE(s.should_call_count, 0) AS "shouldCallCount",
               s.last_activity_at AS "lastActivityAt"
             FROM agents a
@@ -3696,10 +3712,20 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
                 c.assigned_agent_id AS agent_id,
                 COUNT(DISTINCT c.id) AS assigned_conversations,
                 COUNT(m.id) FILTER (WHERE m.direction = 'in') AS inbound_messages,
+                COUNT(DISTINCT c.id) FILTER (
+                  WHERE fi.first_inbound_at IS NOT NULL
+                  ${leadDateFilterSql}
+                ) AS new_leads,
                 COUNT(DISTINCT c.id) FILTER (WHERE c.should_call = true) AS should_call_count,
                 MAX(m.created_at) AS last_activity_at
               FROM conversations c
               LEFT JOIN messages m ON m.conversation_id = c.id
+              LEFT JOIN LATERAL (
+                SELECT MIN(m2.created_at) AS first_inbound_at
+                FROM messages m2
+                WHERE m2.conversation_id = c.id
+                  AND m2.direction = 'in'
+              ) fi ON true
               WHERE c.assigned_agent_id IS NOT NULL
                 ${dateFilterSql}
               GROUP BY c.assigned_agent_id
@@ -3715,6 +3741,7 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
         ...row,
         assignedConversations: Number(row.assignedConversations || 0),
         inboundMessages: Number(row.inboundMessages || 0),
+        newLeads: Number(row.newLeads || 0),
         shouldCallCount: Number(row.shouldCallCount || 0),
       }));
 

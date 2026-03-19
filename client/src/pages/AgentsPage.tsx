@@ -42,6 +42,7 @@ import {
 interface AgentWithStats extends Agent {
   assignedConversations?: number;
   inboundMessages?: number;
+  newLeads?: number;
   shouldCallCount?: number;
   lastActivityAt?: string | null;
 }
@@ -745,7 +746,7 @@ function AgentCard({
                 <div className={cn(
                   "mt-3 gap-2.5",
                   showMobileStats ? "grid grid-cols-1" : "hidden",
-                  "md:grid md:grid-cols-2 lg:grid-cols-4",
+                  "md:grid md:grid-cols-2 lg:grid-cols-5",
                 )}>
                   <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">
                     <div className="absolute left-0 top-0 h-0.5 w-full bg-cyan-400/80" />
@@ -755,6 +756,16 @@ function AgentCard({
                     </p>
                     <p className="mt-1 text-xl font-black text-white tabular-nums">{agent.assignedConversations || 0}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">conversaciones activas</p>
+                  </div>
+
+                  <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">
+                    <div className="absolute left-0 top-0 h-0.5 w-full bg-teal-400/80" />
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1">
+                      <Users className="h-3 w-3 text-teal-300" />
+                      Leads nuevos
+                    </p>
+                    <p className="mt-1 text-xl font-black text-white tabular-nums">{agent.newLeads || 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">primer mensaje cliente</p>
                   </div>
 
                   <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">

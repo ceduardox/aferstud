@@ -204,6 +204,14 @@ export default function AgentsPage() {
     }))
     .filter((item) => item.value > 0);
 
+  const leadsData = agents
+    .map((agent) => ({
+      name: agent.name.split(" ")[0],
+      leads: agent.newLeads || 0,
+    }))
+    .sort((a, b) => b.leads - a.leads)
+    .slice(0, 8);
+
   const pieColors = ["#10b981", "#06b6d4", "#0ea5e9", "#22d3ee", "#14b8a6", "#0891b2"];
 
   return (
@@ -500,6 +508,38 @@ export default function AgentsPage() {
                     </ResponsiveContainer>
                   )}
                 </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="h-4 w-4 text-teal-300" />
+                <h3 className="text-sm font-semibold text-white">Leads nuevos por agente</h3>
+              </div>
+              <div className="h-52">
+                {leadsData.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-slate-500">
+                    Sin leads nuevos en el rango
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={leadsData} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                      <Tooltip
+                        cursor={{ fill: "rgba(20,184,166,0.10)" }}
+                        contentStyle={{
+                          background: "rgba(15,23,42,0.95)",
+                          border: "1px solid rgba(148,163,184,0.25)",
+                          borderRadius: "12px",
+                          color: "#e2e8f0",
+                        }}
+                      />
+                      <Bar dataKey="leads" radius={[8, 8, 0, 0]} fill="#14b8a6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 

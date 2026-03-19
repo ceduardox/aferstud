@@ -675,6 +675,22 @@ async function processAiResponse(data: BufferedMessage) {
       await storage.updateConversation(conversationId, { needsHumanAttention: false });
 
       const shouldSendAudio = wasAudioMessage && aiSettings?.audioResponseEnabled;
+      if (aiResult.imageUrl) {
+        const imgResponse = await sendToWhatsApp(from, 'image', { imageUrl: aiResult.imageUrl });
+        await storage.createMessage({
+          conversationId,
+          waMessageId: imgResponse.messages[0].id,
+          direction: "out",
+          type: "image",
+          // Keep the source URL so the UI can render outbound AI images even without mediaId.
+          text: aiResult.imageUrl,
+          mediaId: null,
+          mimeType: null,
+          timestamp: Math.floor(Date.now() / 1000).toString(),
+          status: "sent",
+          rawJson: imgResponse,
+        });
+      }
 
       let waResponse: any;
       let waMessageId: string;
@@ -740,23 +756,6 @@ async function processAiResponse(data: BufferedMessage) {
       }
 
       await storage.updateConversation(conversationId, updateData);
-
-      if (aiResult.imageUrl) {
-        const imgResponse = await sendToWhatsApp(from, 'image', { imageUrl: aiResult.imageUrl });
-        await storage.createMessage({
-          conversationId,
-          waMessageId: imgResponse.messages[0].id,
-          direction: "out",
-          type: "image",
-          // Keep the source URL so the UI can render outbound AI images even without mediaId.
-          text: aiResult.imageUrl,
-          mediaId: null,
-          mimeType: null,
-          timestamp: Math.floor(Date.now() / 1000).toString(),
-          status: "sent",
-          rawJson: imgResponse,
-        });
-      }
 
       console.log("=== AI RESPONSE SENT (BUFFERED) ===");
       console.log("Response:", aiResult.response);

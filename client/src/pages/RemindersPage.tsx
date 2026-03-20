@@ -7,7 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, RefreshCw, Calendar, Clock, AlertCircle, CheckCircle2, Trash2, Loader2, ClipboardList, List, CalendarDays } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  ArrowLeft,
+  RefreshCw,
+  Calendar,
+  Clock,
+  AlertCircle,
+  CheckCircle2,
+  Trash2,
+  Loader2,
+  ClipboardList,
+  List,
+  CalendarDays,
+} from "lucide-react";
 
 type ReminderFilter = "all" | "overdue" | "today" | "upcoming";
 type ReminderView = "list" | "calendar";
@@ -15,7 +28,9 @@ type ReminderView = "list" | "calendar";
 type ReminderConversation = Conversation & { reminderDate: Date };
 
 function dayKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
 }
 
 export default function RemindersPage() {
@@ -126,22 +141,32 @@ export default function RemindersPage() {
   };
 
   const renderReminderCard = (conv: ReminderConversation, compact = false) => (
-    <Card key={conv.id} data-testid={`reminder-card-${conv.id}`} className={compact ? "border-slate-700/50 bg-slate-900/40" : ""}>
+    <Card
+      key={conv.id}
+      data-testid={`reminder-card-${conv.id}`}
+      className={cn(
+        "border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]",
+        compact ? "ring-1 ring-emerald-500/15" : "hover:border-slate-600/80 transition-colors",
+      )}
+    >
       <CardHeader className={compact ? "pb-2 pt-4" : "pb-2"}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <CardTitle className="text-base">{conv.contactName || conv.waId}</CardTitle>
-          <Badge variant="outline" className="border-amber-500 text-amber-700">
+          <CardTitle className="text-base text-slate-100">{conv.contactName || conv.waId}</CardTitle>
+          <Badge variant="outline" className="border-amber-400/70 bg-amber-500/10 text-amber-300 font-semibold">
             {compact ? formatTimeOnly(conv.reminderAt) : formatReminder(conv.reminderAt)}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <p className="text-sm text-muted-foreground break-words">
-          {conv.reminderNote?.trim() || "Sin nota"}
-        </p>
+        <p className="text-sm text-slate-300 break-words">{conv.reminderNote?.trim() || "Sin nota"}</p>
         <div className="mt-3 flex gap-2">
           <Link href={`/?conversationId=${conv.id}`}>
-            <Button variant="outline" size="sm" data-testid={`button-open-chat-${conv.id}`}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-slate-500/80 bg-slate-800/70 text-slate-100 hover:bg-slate-700/80"
+              data-testid={`button-open-chat-${conv.id}`}
+            >
               Ver chat
             </Button>
           </Link>
@@ -161,22 +186,38 @@ export default function RemindersPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 p-4">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-3 mb-6 flex-wrap">
           <Link href="/">
-            <Button variant="ghost" size="icon" data-testid="button-back-reminders">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-300 hover:text-white hover:bg-slate-800/70"
+              data-testid="button-back-reminders"
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Recordatorios</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Recordatorios</h1>
           <Link href="/follow-up">
-            <Button variant="outline" size="sm" data-testid="button-go-followup">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70"
+              data-testid="button-go-followup"
+            >
               <ClipboardList className="h-4 w-4 mr-2" />
               Seguimiento
             </Button>
           </Link>
-          <Button variant="ghost" size="icon" onClick={() => refetch()} data-testid="button-refresh-reminders-page">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-slate-300 hover:text-white hover:bg-slate-800/70"
+            onClick={() => refetch()}
+            data-testid="button-refresh-reminders-page"
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
           <div className="ml-auto flex items-center gap-2">
@@ -184,6 +225,11 @@ export default function RemindersPage() {
               variant={view === "list" ? "default" : "outline"}
               size="sm"
               onClick={() => setView("list")}
+              className={cn(
+                view === "list"
+                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400 shadow-[0_8px_20px_rgba(16,185,129,.3)]"
+                  : "border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70",
+              )}
               data-testid="button-reminders-view-list"
             >
               <List className="h-4 w-4 mr-2" />
@@ -193,6 +239,11 @@ export default function RemindersPage() {
               variant={view === "calendar" ? "default" : "outline"}
               size="sm"
               onClick={() => setView("calendar")}
+              className={cn(
+                view === "calendar"
+                  ? "bg-cyan-500 hover:bg-cyan-600 text-white border-cyan-400 shadow-[0_8px_20px_rgba(6,182,212,.3)]"
+                  : "border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70",
+              )}
               data-testid="button-reminders-view-calendar"
             >
               <CalendarDays className="h-4 w-4 mr-2" />
@@ -201,22 +252,62 @@ export default function RemindersPage() {
           </div>
         </div>
 
-        <Card className="mb-5">
+        <Card className="mb-5 border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]">
           <CardContent className="pt-4">
             <div className="flex gap-2 flex-wrap">
-              <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")} data-testid="filter-reminders-all">
+              <Button
+                variant={filter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilter("all")}
+                className={cn(
+                  filter === "all"
+                    ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400"
+                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
+                )}
+                data-testid="filter-reminders-all"
+              >
                 <Calendar className="h-4 w-4 mr-2" />
                 Todos ({reminderGroups.all.length})
               </Button>
-              <Button variant={filter === "overdue" ? "default" : "outline"} size="sm" onClick={() => setFilter("overdue")} data-testid="filter-reminders-overdue">
+              <Button
+                variant={filter === "overdue" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilter("overdue")}
+                className={cn(
+                  filter === "overdue"
+                    ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-400"
+                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
+                )}
+                data-testid="filter-reminders-overdue"
+              >
                 <AlertCircle className="h-4 w-4 mr-2" />
                 Vencidos ({reminderGroups.overdue.length})
               </Button>
-              <Button variant={filter === "today" ? "default" : "outline"} size="sm" onClick={() => setFilter("today")} data-testid="filter-reminders-today">
+              <Button
+                variant={filter === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilter("today")}
+                className={cn(
+                  filter === "today"
+                    ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-400"
+                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
+                )}
+                data-testid="filter-reminders-today"
+              >
                 <Clock className="h-4 w-4 mr-2" />
                 Hoy ({reminderGroups.today.length})
               </Button>
-              <Button variant={filter === "upcoming" ? "default" : "outline"} size="sm" onClick={() => setFilter("upcoming")} data-testid="filter-reminders-upcoming">
+              <Button
+                variant={filter === "upcoming" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilter("upcoming")}
+                className={cn(
+                  filter === "upcoming"
+                    ? "bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-400"
+                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
+                )}
+                data-testid="filter-reminders-upcoming"
+              >
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Proximos ({reminderGroups.upcoming.length})
               </Button>
@@ -229,31 +320,38 @@ export default function RemindersPage() {
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : visibleReminders.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <Card className="border-slate-700/60 bg-slate-900/55 backdrop-blur-sm">
+            <CardContent className="py-12 text-center text-slate-400">
+              <Clock className="h-12 w-12 mx-auto mb-4 opacity-60" />
               <p>No hay recordatorios en esta vista</p>
             </CardContent>
           </Card>
         ) : view === "list" ? (
-          <div className="space-y-3">
-            {visibleReminders.map((conv) => renderReminderCard(conv))}
-          </div>
+          <div className="space-y-3">{visibleReminders.map((conv) => renderReminderCard(conv))}</div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-[minmax(320px,400px)_1fr]">
-            <Card className="h-fit">
+            <Card className="h-fit border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Calendario</CardTitle>
+                <CardTitle className="text-base text-slate-100">Calendario</CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="rounded-xl border border-slate-700/40 bg-slate-900/20">
+                <div className="rounded-xl border border-slate-600/60 bg-slate-800/55 p-1">
                   <CalendarPicker
                     mode="single"
                     selected={selectedDate}
                     onSelect={(date) => setSelectedDate(date || new Date())}
                     modifiers={{ hasReminders: reminderDates }}
                     modifiersClassNames={{
-                      hasReminders: "relative after:absolute after:bottom-1 after:left-1/2 after:h-1.5 after:w-1.5 after:-translate-x-1/2 after:rounded-full after:bg-emerald-400",
+                      hasReminders:
+                        "relative after:absolute after:bottom-1 after:left-1/2 after:h-1.5 after:w-1.5 after:-translate-x-1/2 after:rounded-full after:bg-emerald-400",
+                    }}
+                    classNames={{
+                      caption_label: "text-sm font-semibold text-slate-100",
+                      head_cell: "text-slate-400 rounded-md w-9 font-medium text-[0.78rem]",
+                      day: "h-9 w-9 p-0 font-medium text-slate-200 aria-selected:opacity-100 hover:bg-slate-700/70",
+                      day_selected: "bg-emerald-500 text-white hover:bg-emerald-500 focus:bg-emerald-500",
+                      day_today: "bg-cyan-500/20 text-cyan-300",
+                      nav_button: "h-7 w-7 bg-slate-800 border border-slate-600/70 text-slate-200 opacity-100 hover:bg-slate-700",
                     }}
                     className="w-full"
                   />
@@ -261,24 +359,22 @@ export default function RemindersPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <CardTitle className="text-base">
-                    Agenda del día: {selectedDate.toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" })}
+                  <CardTitle className="text-base text-slate-100">
+                    Agenda del dia: {selectedDate.toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" })}
                   </CardTitle>
-                  <Badge variant="secondary">{selectedDayReminders.length} recordatorio(s)</Badge>
+                  <Badge variant="secondary" className="bg-slate-700/70 text-slate-100 border border-slate-600/70">
+                    {selectedDayReminders.length} recordatorio(s)
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
                 {selectedDayReminders.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    No hay recordatorios para este día en el filtro actual.
-                  </div>
+                  <div className="py-8 text-center text-sm text-slate-400">No hay recordatorios para este dia en el filtro actual.</div>
                 ) : (
-                  <div className="space-y-3">
-                    {selectedDayReminders.map((conv) => renderReminderCard(conv, true))}
-                  </div>
+                  <div className="space-y-3">{selectedDayReminders.map((conv) => renderReminderCard(conv, true))}</div>
                 )}
               </CardContent>
             </Card>

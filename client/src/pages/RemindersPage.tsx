@@ -432,10 +432,11 @@ export default function RemindersPage() {
             size="sm"
             onClick={() => clearReminderMutation.mutate(conv.id)}
             disabled={clearReminderMutation.isPending}
+            className="px-2"
             data-testid={`button-clear-reminder-${conv.id}`}
+            title="Eliminar recordatorio"
           >
-            <Trash2 className="h-4 w-4 mr-1" />
-            Eliminar
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </CardContent>

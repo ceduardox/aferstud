@@ -117,6 +117,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const longPressMovedRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
@@ -296,6 +297,25 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       }
     };
   }, [filePreview]);
+
+  const resizeMessageInput = () => {
+    const textarea = messageInputRef.current;
+    if (!textarea) return;
+    const maxHeight = window.innerWidth < 768 ? 200 : 140;
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  };
+
+  useEffect(() => {
+    resizeMessageInput();
+  }, [text]);
+
+  useEffect(() => {
+    setText("");
+    requestAnimationFrame(() => resizeMessageInput());
+  }, [conversation.id]);
 
   const markMediaAsFailed = (mediaId?: string | null) => {
     if (!mediaId) return;
@@ -2043,11 +2063,16 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           </Dialog>
 
           <Textarea
+            ref={messageInputRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              requestAnimationFrame(() => resizeMessageInput());
+            }}
+            onInput={() => resizeMessageInput()}
             onKeyDown={handleKeyDown}
             placeholder="Escribe un mensaje..."
-            className="flex-1 min-w-0 min-h-[40px] max-h-[100px] resize-none overflow-hidden border-0 bg-white dark:bg-[#2a3942] rounded-3xl px-3 md:px-4 py-2.5 text-sm focus-visible:ring-0"
+            className="flex-1 min-w-0 min-h-[40px] max-h-[200px] md:max-h-[140px] resize-none overflow-hidden border-0 bg-white dark:bg-[#2a3942] rounded-3xl px-3 md:px-4 py-2 text-sm leading-[1.35] focus-visible:ring-0"
             rows={1}
           />
 

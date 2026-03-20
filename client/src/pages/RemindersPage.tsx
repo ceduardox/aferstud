@@ -28,6 +28,7 @@ import {
   Rows3,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 
 type ReminderFilter = "all" | "overdue" | "today" | "upcoming";
@@ -374,11 +375,9 @@ export default function RemindersPage() {
     const reminderColor = normalizeReminderColor(item.conv.reminderColor);
 
     return (
-      <button
+      <div
         key={item.conv.id}
-        type="button"
-        onClick={() => openEditReminder(item.conv)}
-        className="absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm focus:outline-none"
+        className="absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm"
         style={{
           top,
           height,
@@ -389,9 +388,30 @@ export default function RemindersPage() {
         }}
         data-testid={`agenda-event-${item.conv.id}`}
       >
-        <p className="truncate text-[11px] font-semibold text-white">{item.conv.contactName || item.conv.waId}</p>
-        <p className="truncate text-[10px] text-white/90">{formatTimeOnly(item.conv.reminderAt)}</p>
-      </button>
+        <div className="mb-1 flex items-start justify-between gap-1">
+          <button
+            type="button"
+            onClick={() => openEditReminder(item.conv)}
+            className="min-w-0 flex-1 text-left"
+            data-testid={`agenda-event-edit-${item.conv.id}`}
+            title="Editar recordatorio"
+          >
+            <p className="truncate text-[11px] font-semibold text-white">{item.conv.contactName || item.conv.waId}</p>
+            <p className="truncate text-[10px] text-white/90">{formatTimeOnly(item.conv.reminderAt)}</p>
+          </button>
+          <Link href={`/?conversationId=${item.conv.id}`}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded bg-black/25 text-white hover:bg-black/40"
+              data-testid={`agenda-event-open-chat-${item.conv.id}`}
+              title="Ir al chat"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        </div>
+      </div>
     );
   };
 

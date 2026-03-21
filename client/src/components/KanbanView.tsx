@@ -613,18 +613,36 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
     ? conversations.filter((c) => c.labelId === filterLabelId || c.labelId2 === filterLabelId)
     : conversations;
 
-  const humano = filtered.filter(c => c.needsHumanAttention);
-  const entregados = filtered.filter(c => c.orderStatus === "delivered" && !c.needsHumanAttention);
-  const listos = filtered.filter(c => c.orderStatus === "ready" && !c.needsHumanAttention);
-  const llamar = filtered.filter(c => 
-    c.shouldCall && !c.needsHumanAttention && c.orderStatus !== "pending" && c.orderStatus !== "ready" && c.orderStatus !== "delivered"
+  const getConversationSortTimestamp = (conv: Conversation) => {
+    if (conv.lastMessageTimestamp) {
+      const lastTs = new Date(conv.lastMessageTimestamp).getTime();
+      if (Number.isFinite(lastTs)) return lastTs;
+    }
+    if (conv.updatedAt) {
+      const updatedTs = new Date(conv.updatedAt).getTime();
+      if (Number.isFinite(updatedTs)) return updatedTs;
+    }
+    return 0;
+  };
+
+  const sortByRecent = (items: Conversation[]) =>
+    [...items].sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
+
+  const humano = sortByRecent(filtered.filter((c) => c.needsHumanAttention));
+  const entregados = sortByRecent(filtered.filter((c) => c.orderStatus === "delivered" && !c.needsHumanAttention));
+  const listos = sortByRecent(filtered.filter((c) => c.orderStatus === "ready" && !c.needsHumanAttention));
+  const llamar = sortByRecent(
+    filtered.filter(
+      (c) =>
+        c.shouldCall &&
+        !c.needsHumanAttention &&
+        c.orderStatus !== "pending" &&
+        c.orderStatus !== "ready" &&
+        c.orderStatus !== "delivered",
+    ),
   );
-  const enProceso = filtered.filter(c =>
-    c.orderStatus === "pending" && !c.needsHumanAttention
-  );
-  const nuevos = filtered.filter(c => 
-    !c.orderStatus && !c.shouldCall && !c.needsHumanAttention
-  );
+  const enProceso = sortByRecent(filtered.filter((c) => c.orderStatus === "pending" && !c.needsHumanAttention));
+  const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention));
 
   const columnData: Record<TabType, { items: Conversation[]; title: string }> = {
     humano: { items: humano, title: "Interaccion Humana" },

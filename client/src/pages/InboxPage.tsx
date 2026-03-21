@@ -45,19 +45,21 @@ export default function InboxPage() {
     const cutoff = new Date(now.getTime() - daysToShow * 24 * 60 * 60 * 1000);
     const query = searchQuery.toLowerCase().trim();
     
-    return conversations
-      .filter(c => {
-        // Si hay búsqueda, buscar en nombre y último mensaje (sin límite de tiempo)
-        if (query) {
-          const nameMatch = c.contactName?.toLowerCase().includes(query);
-          const messageMatch = c.lastMessage?.toLowerCase().includes(query);
-          const phoneMatch = c.waId?.includes(query);
-          return nameMatch || messageMatch || phoneMatch;
-        }
-        // Sin búsqueda, aplicar filtro de tiempo
-        if (!c.lastMessageTimestamp) return true;
-        return new Date(c.lastMessageTimestamp) >= cutoff;
-      });
+    return conversations.filter((c) => {
+      if (query) {
+        const nameMatch = c.contactName?.toLowerCase().includes(query);
+        const messageMatch = c.lastMessage?.toLowerCase().includes(query);
+        const phoneMatch = c.waId?.includes(query);
+        return nameMatch || messageMatch || phoneMatch;
+      }
+
+      if (c.orderStatus === "pending" || c.orderStatus === "ready" || c.orderStatus === "delivered") {
+        return true;
+      }
+
+      if (!c.lastMessageTimestamp) return true;
+      return new Date(c.lastMessageTimestamp) >= cutoff;
+    });
   }, [conversations, daysToShow, searchQuery]);
 
   const filteredConversations = useMemo(
@@ -254,6 +256,7 @@ export default function InboxPage() {
     </div>
   );
 }
+
 
 
 

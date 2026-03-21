@@ -70,23 +70,45 @@ export default function InboxPage() {
   }, [conversations, daysToShow, searchQuery]);
 
   const serverHasMoreConversations = conversations.length >= serverLimit;
-  const hasHiddenOperationalColumns = useMemo(() => {
+  const hasHiddenColumnsByLimit = useMemo(() => {
     const limit = Math.max(1, visibleConversations);
+    let humano = 0;
+    let nuevo = 0;
+    let llamar = 0;
     let pending = 0;
     let ready = 0;
     let delivered = 0;
 
     for (const conversation of filteredByRangeAndSearch) {
-      if (conversation.needsHumanAttention) continue;
-      if (conversation.orderStatus === "pending") pending++;
-      if (conversation.orderStatus === "ready") ready++;
-      if (conversation.orderStatus === "delivered") delivered++;
-      if (pending > limit || ready > limit || delivered > limit) return true;
+      if (conversation.needsHumanAttention) {
+        humano++;
+      } else if (conversation.orderStatus === "pending") {
+        pending++;
+      } else if (conversation.orderStatus === "ready") {
+        ready++;
+      } else if (conversation.orderStatus === "delivered") {
+        delivered++;
+      } else if (conversation.shouldCall) {
+        llamar++;
+      } else {
+        nuevo++;
+      }
+
+      if (
+        humano > limit ||
+        nuevo > limit ||
+        llamar > limit ||
+        pending > limit ||
+        ready > limit ||
+        delivered > limit
+      ) {
+        return true;
+      }
     }
 
     return false;
   }, [filteredByRangeAndSearch, visibleConversations]);
-  const hasMoreConversations = serverHasMoreConversations || hasHiddenOperationalColumns;
+  const hasMoreConversations = serverHasMoreConversations || hasHiddenColumnsByLimit;
 
   useEffect(() => {
     setVisibleConversations(INITIAL_VISIBLE_CONVERSATIONS);

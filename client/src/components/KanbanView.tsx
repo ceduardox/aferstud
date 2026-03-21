@@ -629,15 +629,15 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const sortByRecent = (items: Conversation[]) =>
     [...items].sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
 
-  const operationalLimit = Math.max(1, columnVisibleLimit);
+  const displayLimit = Math.max(1, columnVisibleLimit);
 
-  const humano = sortByRecent(filtered.filter((c) => c.needsHumanAttention));
+  const humano = sortByRecent(filtered.filter((c) => c.needsHumanAttention)).slice(0, displayLimit);
   const entregados = sortByRecent(
     filtered.filter((c) => c.orderStatus === "delivered" && !c.needsHumanAttention),
-  ).slice(0, operationalLimit);
+  ).slice(0, displayLimit);
   const listos = sortByRecent(
     filtered.filter((c) => c.orderStatus === "ready" && !c.needsHumanAttention),
-  ).slice(0, operationalLimit);
+  ).slice(0, displayLimit);
   const llamar = sortByRecent(
     filtered.filter(
       (c) =>
@@ -647,11 +647,11 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
         c.orderStatus !== "ready" &&
         c.orderStatus !== "delivered",
     ),
-  );
+  ).slice(0, displayLimit);
   const enProceso = sortByRecent(
     filtered.filter((c) => c.orderStatus === "pending" && !c.needsHumanAttention),
-  ).slice(0, operationalLimit);
-  const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention));
+  ).slice(0, displayLimit);
+  const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention)).slice(0, displayLimit);
 
   const columnData: Record<TabType, { items: Conversation[]; title: string }> = {
     humano: { items: humano, title: "Interaccion Humana" },

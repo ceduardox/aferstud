@@ -1813,7 +1813,7 @@ async function sendToWhatsApp(to: string, type: 'text' | 'image' | 'interactive'
   if (type === 'text') {
     payload.text = { body: content.text };
   } else if (type === 'image') {
-    payload.image = { link: content.imageUrl };
+    payload.image = { link: resolvePublicImageUrl(content.imageUrl) };
     if (content.caption) {
       payload.image.caption = content.caption;
     }

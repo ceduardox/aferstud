@@ -121,6 +121,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const quickMessageImageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<BlobPart[]>([]);
@@ -926,8 +927,13 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       const res = await fetch("/api/quick-messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "No se pudo guardar el mensaje rapido");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -935,7 +941,42 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       setNewQmName("");
       setNewQmText("");
       setNewQmImageUrl("");
-      toast({ title: "Mensaje rápido guardado" });
+      if (quickMessageImageInputRef.current) {
+        quickMessageImageInputRef.current.value = "";
+      }
+      toast({ title: "Mensaje rapido guardado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const uploadQuickMessageImageMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/products/upload-image", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "No se pudo subir imagen");
+      }
+      const payload = await res.json();
+      const uploadedUrl = typeof payload?.url === "string" ? payload.url.trim() : "";
+      if (!uploadedUrl) {
+        throw new Error("Respuesta invalida al subir imagen");
+      }
+      return uploadedUrl;
+    },
+    onSuccess: (uploadedUrl) => {
+      setNewQmImageUrl(uploadedUrl);
+      toast({ title: "Imagen cargada" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al subir imagen", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1148,6 +1189,20 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     setFilePreview(null);
     setShowImageInput(false);
     setImageUrl("");
+  };
+
+  const handleQuickMessageImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Formato no soportado", description: "Selecciona una imagen", variant: "destructive" });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast({ title: "Archivo muy grande", description: "Max 8MB", variant: "destructive" });
+      return;
+    }
+    uploadQuickMessageImageMutation.mutate(file);
   };
 
   const handleQuickMessage = (qm: QuickMessage) => {
@@ -2056,13 +2111,47 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
             </DropdownMenu>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Nuevo Mensaje Rápido</DialogTitle>
+                <DialogTitle>Nuevo Mensaje Rapido</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Input
+                    ref={quickMessageImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQuickMessageImageFileSelect}
+                    data-testid="input-quick-message-image-file"
+                  />
+                  {uploadQuickMessageImageMutation.isPending && (
+                    <p className="text-xs text-muted-foreground">Subiendo imagen...</p>
+                  )}
+                  {newQmImageUrl && (
+                    <div className="flex items-center gap-2 rounded-md border p-2">
+                      <img
+                        src={newQmImageUrl}
+                        alt="Preview mensaje rapido"
+                        className="h-12 w-12 rounded object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                      <span className="text-xs text-muted-foreground truncate">{newQmImageUrl}</span>
+                    </div>
+                  )}
+                </div>
                 <Input placeholder="Nombre (ej: Saludo)" value={newQmName} onChange={(e) => setNewQmName(e.target.value)} />
                 <Textarea placeholder="Texto del mensaje" value={newQmText} onChange={(e) => setNewQmText(e.target.value)} rows={3} />
                 <Input placeholder="URL de imagen (opcional)" value={newQmImageUrl} onChange={(e) => setNewQmImageUrl(e.target.value)} />
-                <Button onClick={() => createQuickMessageMutation.mutate({ name: newQmName, text: newQmText || undefined, imageUrl: newQmImageUrl || undefined })} disabled={!newQmName}>
+                <Button
+                  onClick={() =>
+                    createQuickMessageMutation.mutate({
+                      name: newQmName,
+                      text: newQmText || undefined,
+                      imageUrl: newQmImageUrl || undefined,
+                    })
+                  }
+                  disabled={!newQmName || uploadQuickMessageImageMutation.isPending || createQuickMessageMutation.isPending}
+                >
                   Guardar
                 </Button>
               </div>
@@ -2108,3 +2197,5 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     </div>
   );
 }
+
+

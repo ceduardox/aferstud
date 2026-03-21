@@ -69,7 +69,24 @@ export default function InboxPage() {
     });
   }, [conversations, daysToShow, searchQuery]);
 
-  const hasMoreConversations = conversations.length >= serverLimit;
+  const serverHasMoreConversations = conversations.length >= serverLimit;
+  const hasHiddenOperationalColumns = useMemo(() => {
+    const limit = Math.max(1, visibleConversations);
+    let pending = 0;
+    let ready = 0;
+    let delivered = 0;
+
+    for (const conversation of filteredByRangeAndSearch) {
+      if (conversation.needsHumanAttention) continue;
+      if (conversation.orderStatus === "pending") pending++;
+      if (conversation.orderStatus === "ready") ready++;
+      if (conversation.orderStatus === "delivered") delivered++;
+      if (pending > limit || ready > limit || delivered > limit) return true;
+    }
+
+    return false;
+  }, [filteredByRangeAndSearch, visibleConversations]);
+  const hasMoreConversations = serverHasMoreConversations || hasHiddenOperationalColumns;
 
   useEffect(() => {
     setVisibleConversations(INITIAL_VISIBLE_CONVERSATIONS);

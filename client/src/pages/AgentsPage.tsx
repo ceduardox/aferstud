@@ -72,6 +72,26 @@ const glowAnimation = `
 }
 `;
 
+function parsePositiveNumber(value: string, fallback = 0): number {
+  const normalized = String(value || "").replace(",", ".").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function formatBs(value: number): string {
+  return `${value.toLocaleString("es-BO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} Bs`;
+}
+
+function formatUsd(value: number): string {
+  return `USD ${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export default function AgentsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -87,6 +107,9 @@ export default function AgentsPage() {
   const [routingAdId, setRoutingAdId] = useState("");
   const [routingIsActive, setRoutingIsActive] = useState(true);
   const [routingAgentIds, setRoutingAgentIds] = useState<number[]>([]);
+  const [costPerClientMessageBs, setCostPerClientMessageBs] = useState("1.23");
+  const [officialRateBs, setOfficialRateBs] = useState("6.6");
+  const [parallelRateBs, setParallelRateBs] = useState("9.23");
 
   const { data: agents = [], isLoading } = useQuery<AgentWithStats[]>({
     queryKey: ["/api/agents", dateFrom, dateTo],
@@ -234,10 +257,15 @@ export default function AgentsPage() {
 
   const activeAgents = agents.filter(a => a.isActive);
   const inactiveAgents = agents.filter(a => !a.isActive);
-  const totalAssignedConversations = agents.reduce((acc, agent) => acc + (agent.assignedConversations || 0), 0);
   const totalInboundMessages = agents.reduce((acc, agent) => acc + (agent.inboundMessages || 0), 0);
   const totalShouldCall = agents.reduce((acc, agent) => acc + (agent.shouldCallCount || 0), 0);
   const activeAgentIdSet = new Set(activeAgents.map((a) => a.id));
+  const unitCostBs = parsePositiveNumber(costPerClientMessageBs, 0);
+  const officialRate = parsePositiveNumber(officialRateBs, 0);
+  const parallelRate = parsePositiveNumber(parallelRateBs, 0);
+  const totalBaseCostBs = totalInboundMessages * unitCostBs;
+  const totalCostUsd = officialRate > 0 ? totalBaseCostBs / officialRate : 0;
+  const totalParallelCostBs = totalCostUsd * parallelRate;
 
   const toggleRoutingAgent = (agentId: number) => {
     setRoutingAgentIds((prev) =>
@@ -262,14 +290,6 @@ export default function AgentsPage() {
       value: agent.assignedConversations || 0,
     }))
     .filter((item) => item.value > 0);
-
-  const leadsData = agents
-    .map((agent) => ({
-      name: agent.name.split(" ")[0],
-      leads: agent.newLeads || 0,
-    }))
-    .sort((a, b) => b.leads - a.leads)
-    .slice(0, 8);
 
   const pieColors = ["#10b981", "#06b6d4", "#0ea5e9", "#22d3ee", "#14b8a6", "#0891b2"];
 
@@ -378,9 +398,61 @@ export default function AgentsPage() {
           </div>
           <p className="mt-2 text-xs text-slate-500">
             {dateFrom || dateTo
-              ? `Mostrando metricas del rango ${dateFrom || "..."} a ${dateTo || "..."}`
+              ? `Mostrando metricas del rango ${dateFrom || "..."} a ${dateTo || "..."}` 
               : "Mostrando metricas acumuladas (sin filtro de fechas)"}
           </p>
+        </div>
+
+        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-white">Costo por agente (base: Mensajes cliente)</h3>
+            <p className="text-xs text-slate-400">
+              Formula: (Mensajes cliente * costo unitario Bs) / TC oficial * TC paralelo
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Costo por mensaje cliente (Bs)</label>
+              <Input
+                value={costPerClientMessageBs}
+                onChange={(e) => setCostPerClientMessageBs(e.target.value)}
+                className="h-9 bg-slate-800/60 border-slate-700/50 text-white"
+                data-testid="input-cost-per-client-message-bs"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Tipo de cambio oficial (Bs/USD)</label>
+              <Input
+                value={officialRateBs}
+                onChange={(e) => setOfficialRateBs(e.target.value)}
+                className="h-9 bg-slate-800/60 border-slate-700/50 text-white"
+                data-testid="input-official-rate-bs-usd"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Dolar paralelo (Bs/USD)</label>
+              <Input
+                value={parallelRateBs}
+                onChange={(e) => setParallelRateBs(e.target.value)}
+                className="h-9 bg-slate-800/60 border-slate-700/50 text-white"
+                data-testid="input-parallel-rate-bs-usd"
+              />
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-cyan-300">Costo base total</p>
+              <p className="text-lg font-semibold text-white mt-1">{formatBs(totalBaseCostBs)}</p>
+            </div>
+            <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-violet-200">Equivalente USD</p>
+              <p className="text-lg font-semibold text-white mt-1">{formatUsd(totalCostUsd)}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-emerald-300">Costo paralelo total</p>
+              <p className="text-lg font-semibold text-white mt-1">{formatBs(totalParallelCostBs)}</p>
+            </div>
+          </div>
         </div>
 
         <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
@@ -492,14 +564,10 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3">
             <p className="text-[11px] uppercase tracking-wide text-emerald-300">Agentes activos</p>
             <p className="text-2xl font-bold text-white mt-1">{activeAgents.length}</p>
-          </div>
-          <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-cyan-300">Chats asignados</p>
-            <p className="text-2xl font-bold text-white mt-1">{totalAssignedConversations}</p>
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3">
             <p className="text-[11px] uppercase tracking-wide text-sky-300">Mensajes cliente</p>
@@ -679,38 +747,6 @@ export default function AgentsPage() {
               </div>
             </div>
 
-            <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="h-4 w-4 text-teal-300" />
-                <h3 className="text-sm font-semibold text-white">Leads nuevos por agente</h3>
-              </div>
-              <div className="h-52">
-                {leadsData.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-sm text-slate-500">
-                    Sin leads nuevos en el rango
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={leadsData} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip
-                        cursor={{ fill: "rgba(20,184,166,0.10)" }}
-                        contentStyle={{
-                          background: "rgba(15,23,42,0.95)",
-                          border: "1px solid rgba(148,163,184,0.25)",
-                          borderRadius: "12px",
-                          color: "#e2e8f0",
-                        }}
-                      />
-                      <Bar dataKey="leads" radius={[8, 8, 0, 0]} fill="#14b8a6" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </div>
-
             {activeAgents.length > 0 && (
               <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl shadow-emerald-500/10 overflow-hidden">
                 <div className="bg-gradient-to-r from-emerald-600/80 to-teal-600/80 px-4 py-3 relative overflow-hidden">
@@ -741,6 +777,9 @@ export default function AgentsPage() {
                       }}
                       onUpdate={(updates) => updateMutation.mutate({ id: agent.id, ...updates })}
                       isPending={updateMutation.isPending}
+                      unitCostBs={unitCostBs}
+                      officialRate={officialRate}
+                      parallelRate={parallelRate}
                     />
                   ))}
                 </div>
@@ -777,6 +816,9 @@ export default function AgentsPage() {
                       }}
                       onUpdate={(updates) => updateMutation.mutate({ id: agent.id, ...updates })}
                       isPending={updateMutation.isPending}
+                      unitCostBs={unitCostBs}
+                      officialRate={officialRate}
+                      parallelRate={parallelRate}
                     />
                   ))}
                 </div>
@@ -800,6 +842,9 @@ function AgentCard({
   onDelete,
   onUpdate,
   isPending,
+  unitCostBs,
+  officialRate,
+  parallelRate,
 }: {
   agent: AgentWithStats;
   editingId: number | null;
@@ -811,12 +856,19 @@ function AgentCard({
   onDelete: () => void;
   onUpdate: (updates: Record<string, any>) => void;
   isPending: boolean;
+  unitCostBs: number;
+  officialRate: number;
+  parallelRate: number;
 }) {
   const isEditing = editingId === agent.id;
   const [editName, setEditName] = useState(agent.name);
   const [editWeight, setEditWeight] = useState(agent.weight || 1);
   const [editPassword, setEditPassword] = useState(agent.password);
   const [showMobileStats, setShowMobileStats] = useState(false);
+  const inboundMessages = agent.inboundMessages || 0;
+  const baseCostBs = inboundMessages * unitCostBs;
+  const equivalentUsd = officialRate > 0 ? baseCostBs / officialRate : 0;
+  const parallelCostBs = equivalentUsd * parallelRate;
   const formatLastActivity = (value?: string | null) => {
     if (!value) return "Sin actividad";
     const date = new Date(value);
@@ -954,36 +1006,24 @@ function AgentCard({
                 <div className={cn(
                   "mt-3 gap-2.5",
                   showMobileStats ? "grid grid-cols-1" : "hidden",
-                  "md:grid md:grid-cols-2 lg:grid-cols-5",
+                  "md:grid md:grid-cols-2 lg:grid-cols-4",
                 )}>
-                  <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">
-                    <div className="absolute left-0 top-0 h-0.5 w-full bg-cyan-400/80" />
-                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1">
-                      <Users className="h-3 w-3 text-cyan-300" />
-                      Chats asignados
-                    </p>
-                    <p className="mt-1 text-xl font-black text-white tabular-nums">{agent.assignedConversations || 0}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">conversaciones activas</p>
-                  </div>
-
-                  <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">
-                    <div className="absolute left-0 top-0 h-0.5 w-full bg-teal-400/80" />
-                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1">
-                      <Users className="h-3 w-3 text-teal-300" />
-                      Leads nuevos
-                    </p>
-                    <p className="mt-1 text-xl font-black text-white tabular-nums">{agent.newLeads || 0}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">primer mensaje cliente</p>
-                  </div>
-
                   <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">
                     <div className="absolute left-0 top-0 h-0.5 w-full bg-emerald-400/80" />
                     <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1">
                       <MessageSquare className="h-3 w-3 text-emerald-300" />
                       Mensajes cliente
                     </p>
-                    <p className="mt-1 text-xl font-black text-white tabular-nums">{agent.inboundMessages || 0}</p>
+                    <p className="mt-1 text-xl font-black text-white tabular-nums">{inboundMessages}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">entrantes recibidos</p>
+                  </div>
+
+                  <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">
+                    <div className="absolute left-0 top-0 h-0.5 w-full bg-cyan-400/80" />
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400">Costo estimado</p>
+                    <p className="mt-1 text-[11px] text-slate-200">Base: <span className="font-semibold text-white">{formatBs(baseCostBs)}</span></p>
+                    <p className="text-[11px] text-slate-300">USD: <span className="font-semibold text-white">{formatUsd(equivalentUsd)}</span></p>
+                    <p className="text-[11px] text-slate-300">Paralelo: <span className="font-semibold text-white">{formatBs(parallelCostBs)}</span></p>
                   </div>
 
                   <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">

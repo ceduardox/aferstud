@@ -43,8 +43,7 @@ export default function AnalyticsPage() {
   const queryClient = useQueryClient();
   const isAdmin = user?.role === "admin";
   const { data: conversations = [] } = useConversations();
-  const [dateFrom, setDateFrom] = useState(() => toInputDate(new Date()));
-  const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
+  const [reportDate, setReportDate] = useState(() => toInputDate(new Date()));
   const [costDate, setCostDate] = useState(() => {
     return toInputDate(new Date());
   });
@@ -58,26 +57,17 @@ export default function AnalyticsPage() {
   const formatUsd = (value: number) =>
     `USD ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const dateRange = useMemo(() => {
+  const selectedDate = useMemo(() => {
     const today = toInputDate(new Date());
-    let from = dateFrom || today;
-    let to = dateTo || today;
-
-    if (from > to) {
-      const tmp = from;
-      from = to;
-      to = tmp;
-    }
-
-    return { from, to };
-  }, [dateFrom, dateTo]);
+    return reportDate || today;
+  }, [reportDate]);
 
   const { data: agentStats = [] } = useQuery<AgentStat[]>({
-    queryKey: ["/api/agent-stats", dateRange.from, dateRange.to],
+    queryKey: ["/api/agent-stats", selectedDate],
     queryFn: async () => {
       const params = new URLSearchParams();
-      params.set("dateFrom", dateRange.from);
-      params.set("dateTo", dateRange.to);
+      params.set("dateFrom", selectedDate);
+      params.set("dateTo", selectedDate);
       const res = await fetch(`/api/agent-stats?${params.toString()}`, {
         credentials: "include",
       });
@@ -153,9 +143,9 @@ export default function AnalyticsPage() {
     return conversations.filter(c => {
       if (!c.lastMessageTimestamp) return false;
       const msgDate = toInputDate(new Date(c.lastMessageTimestamp));
-      return msgDate >= dateRange.from && msgDate <= dateRange.to;
+      return msgDate === selectedDate;
     });
-  }, [conversations, dateRange.from, dateRange.to]);
+  }, [conversations, selectedDate]);
 
   const stats = useMemo(() => {
     const humano = filteredConversations.filter(c => c.needsHumanAttention).length;
@@ -281,42 +271,31 @@ export default function AnalyticsPage() {
 
       <div className="p-4 space-y-6 pb-20">
         <div className="rounded-2xl border border-slate-700/40 bg-slate-800/60 p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">Filtro de fechas</h3>
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+          <h3 className="text-sm font-semibold text-white mb-3">Filtro por día</h3>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
             <div>
-              <label className="text-xs text-slate-400 mb-1 block">Desde</label>
+              <label className="text-xs text-slate-400 mb-1 block">Día</label>
               <Input
                 type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                value={reportDate}
+                onChange={(e) => setReportDate(e.target.value)}
                 className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                data-testid="input-analytics-date-from"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block">Hasta</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                data-testid="input-analytics-date-to"
+                data-testid="input-analytics-date"
               />
             </div>
             <Button
               onClick={() => {
                 const today = toInputDate(new Date());
-                setDateFrom(today);
-                setDateTo(today);
+                setReportDate(today);
               }}
               className="h-9 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
-              data-testid="button-analytics-range-today"
+              data-testid="button-analytics-date-today"
             >
               Hoy
             </Button>
           </div>
           <p className="text-xs text-slate-500 mt-2">
-            Rango aplicado: {dateRange.from} a {dateRange.to}
+            Día aplicado: {selectedDate}
           </p>
         </div>
 

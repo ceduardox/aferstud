@@ -684,8 +684,8 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/5 to-transparent rounded-2xl" />
-          <div className="absolute -top-10 -left-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-emerald-500/5 to-transparent rounded-2xl" />
+          <div className="pointer-events-none absolute -top-10 -left-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl" />
           <h3 className="font-semibold mb-3 flex items-center gap-2 relative">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-lg">
               <Users className="h-4 w-4 text-white" />
@@ -726,7 +726,7 @@ export default function AnalyticsPage() {
                   className={selected ? "bg-cyan-600 hover:bg-cyan-500" : "border-slate-600 text-slate-300"}
                   onClick={() => toggleSingleAgent(agent.id, !selected)}
                 >
-                  {selected ? "✓ " : ""}{agent.name}
+                  {selected ? "[x] " : ""}{agent.name}
                 </Button>
               );
             })}

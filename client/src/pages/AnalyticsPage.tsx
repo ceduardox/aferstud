@@ -816,8 +816,8 @@ export default function AnalyticsPage() {
 
         {/* Agent Message Stats */}
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-t from-amber-500/5 to-transparent rounded-2xl" />
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-amber-500/5 to-transparent rounded-2xl" />
+          <div className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl" />
           <h3 className="font-semibold mb-4 flex items-center gap-2 relative">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg">
               <Users className="h-4 w-4 text-white" />
@@ -867,7 +867,7 @@ export default function AnalyticsPage() {
                 ))}
               </div>
 
-              <div className="hidden md:block overflow-auto max-h-[460px] rounded-xl border border-slate-700/40">
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-700/40">
                 <table className="min-w-[980px] w-full text-sm table-fixed" data-testid="table-agent-stats">
                   <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
                     <tr className="border-b border-slate-700/50">
@@ -898,6 +898,17 @@ export default function AnalyticsPage() {
                         </td>
                       </tr>
                     ))}
+                    <tr className="border-t border-cyan-500/40 bg-cyan-500/10">
+                      <td className="py-2 px-2 font-semibold text-cyan-200 whitespace-nowrap">Totales seleccionados</td>
+                      <td className="py-2 px-2 text-cyan-200 whitespace-nowrap">-</td>
+                      <td className="py-2 px-2 text-center text-emerald-300 font-bold whitespace-nowrap">{selectedTotals.incoming}</td>
+                      <td className="py-2 px-2 text-center text-cyan-300 font-bold whitespace-nowrap">{selectedTotals.outgoing}</td>
+                      <td className="py-2 px-2 text-center text-sky-300 font-bold whitespace-nowrap">{selectedTotals.inboundChats}</td>
+                      <td className="py-2 px-2 text-center text-amber-300 font-bold whitespace-nowrap">{selectedTotals.totalMessages}</td>
+                      <td className="py-2 px-2 text-center text-violet-300 font-bold whitespace-nowrap">
+                        {selectedTotals.hasParallelCost ? formatBs(selectedTotals.parallelCostTotal) : "N/D"}
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>

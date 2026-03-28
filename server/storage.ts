@@ -11,6 +11,7 @@ import {
   purchaseAnalyses,
   learnedRules,
   agents,
+  subadmins,
   type Conversation,
   type InsertConversation,
   type Message,
@@ -33,6 +34,8 @@ import {
   type InsertLearnedRule,
   type Agent,
   type InsertAgent,
+  type Subadmin,
+  type InsertSubadmin,
 } from "@shared/schema";
 import { eq, and, lt, desc, asc, sql } from "drizzle-orm";
 
@@ -110,12 +113,20 @@ export interface IStorage {
   assignConversationToAgent(conversationId: number, agentId: number): Promise<void>;
   getNextAgentForAssignment(): Promise<Agent | undefined>;
   deleteConversation(id: number): Promise<void>;
+
+  // Subadmins
+  getSubadmins(): Promise<Subadmin[]>;
+  getSubadminByUsername(username: string): Promise<Subadmin | undefined>;
+  createSubadmin(subadmin: InsertSubadmin): Promise<Subadmin>;
+  updateSubadmin(id: number, subadmin: Partial<InsertSubadmin>): Promise<Subadmin>;
+  deleteSubadmin(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
   private reminderColumnsEnsured = false;
   private agentAiColumnEnsured = false;
   private aiSettingsColumnsEnsured = false;
+  private subadminsTableEnsured = false;
 
   private mapFallbackAgentRow(row: any): Agent {
     return {
@@ -207,6 +218,21 @@ export class DatabaseStorage implements IStorage {
       ADD COLUMN IF NOT EXISTS follow_up_fixed_message TEXT
     `);
     this.aiSettingsColumnsEnsured = true;
+  }
+
+  private async ensureSubadminsTable(): Promise<void> {
+    if (this.subadminsTableEnsured) return;
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS subadmins (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        username VARCHAR(50) NOT NULL UNIQUE,
+        password VARCHAR(100) NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    this.subadminsTableEnsured = true;
   }
 
   private async getAssignmentCursor(): Promise<number> {
@@ -708,6 +734,34 @@ export class DatabaseStorage implements IStorage {
   async deleteConversation(id: number): Promise<void> {
     await db.delete(messages).where(eq(messages.conversationId, id));
     await db.delete(conversations).where(eq(conversations.id, id));
+  }
+
+  async getSubadmins(): Promise<Subadmin[]> {
+    await this.ensureSubadminsTable();
+    return await db.select().from(subadmins).orderBy(asc(subadmins.name));
+  }
+
+  async getSubadminByUsername(username: string): Promise<Subadmin | undefined> {
+    await this.ensureSubadminsTable();
+    const [subadmin] = await db.select().from(subadmins).where(eq(subadmins.username, username));
+    return subadmin;
+  }
+
+  async createSubadmin(subadmin: InsertSubadmin): Promise<Subadmin> {
+    await this.ensureSubadminsTable();
+    const [created] = await db.insert(subadmins).values(subadmin).returning();
+    return created;
+  }
+
+  async updateSubadmin(id: number, subadmin: Partial<InsertSubadmin>): Promise<Subadmin> {
+    await this.ensureSubadminsTable();
+    const [updated] = await db.update(subadmins).set(subadmin).where(eq(subadmins.id, id)).returning();
+    return updated;
+  }
+
+  async deleteSubadmin(id: number): Promise<void> {
+    await this.ensureSubadminsTable();
+    await db.delete(subadmins).where(eq(subadmins.id, id));
   }
 }
 

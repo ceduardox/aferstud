@@ -74,6 +74,7 @@ export function useAuth() {
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
     isAdmin: isAuthenticated && userQuery.data?.role === "admin",
+    isPrimaryAdmin: isAuthenticated && userQuery.data?.isPrimaryAdmin === true,
     isAgent: isAuthenticated && userQuery.data?.role === "agent",
     role: userQuery.data?.role,
   };

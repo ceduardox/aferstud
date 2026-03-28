@@ -30,6 +30,15 @@ export const agents = pgTable("agents", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const subadmins = pgTable("subadmins", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  username: varchar("username", { length: 50 }).notNull().unique(),
+  password: varchar("password", { length: 100 }).notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
   waId: varchar("wa_id").notNull().unique(),
@@ -88,6 +97,7 @@ export const insertMessageSchema = createInsertSchema(messages).omit({ id: true,
 export const insertLabelSchema = createInsertSchema(labels).omit({ id: true });
 export const insertQuickMessageSchema = createInsertSchema(quickMessages).omit({ id: true });
 export const insertAgentSchema = createInsertSchema(agents).omit({ id: true, createdAt: true });
+export const insertSubadminSchema = createInsertSchema(subadmins).omit({ id: true, createdAt: true });
 
 // === API TYPES ===
 
@@ -96,7 +106,9 @@ export type Message = typeof messages.$inferSelect;
 export type Label = typeof labels.$inferSelect;
 export type QuickMessage = typeof quickMessages.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
+export type Subadmin = typeof subadmins.$inferSelect;
 export type InsertAgent = z.infer<typeof insertAgentSchema>;
+export type InsertSubadmin = z.infer<typeof insertSubadminSchema>;
 
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;

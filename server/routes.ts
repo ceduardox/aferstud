@@ -32,6 +32,18 @@ const INCOMING_PUSH_COOLDOWN_MS = 60000;
 const FIRST_CONTACT_TOP_LEVEL_BUTTONS = "[BOTONES: Azucar y peso, Dolor y estres, Dolor articular]";
 const FIRST_CONTACT_AZUCAR_PESO_BUTTONS = "[BOTONES: Solo diabetes, Diabetes + peso]";
 const DEFAULT_ADVISOR_NAME = "Isabella";
+const upsertSubadminSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  username: z.string().trim().min(1).max(50),
+  password: z.string().min(1).max(100),
+  isActive: z.boolean().optional(),
+});
+const updateSubadminSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  username: z.string().trim().min(1).max(50).optional(),
+  password: z.string().min(1).max(100).optional(),
+  isActive: z.boolean().optional(),
+}).refine((value) => Object.keys(value).length > 0, "At least one field is required");
 function getFirstContactProblemMenuResponse(advisorName: string) {
   return `Hola, soy ${advisorName} de RYZTOR.
 Con gusto le ayudo. Que le interesa mejorar hoy?
@@ -2526,17 +2538,33 @@ export async function registerRoutes(
       (req.session as any).authenticated = true;
       (req.session as any).username = username;
       (req.session as any).role = "admin";
+      (req.session as any).isPrimaryAdmin = true;
+      (req.session as any).agentId = undefined;
+      (req.session as any).subadminId = undefined;
       res.json({ success: true });
     } else {
-      const agent = await storage.getAgentByUsername(username);
-      if (agent && agent.password === password) {
+      const subadmin = await storage.getSubadminByUsername(username);
+      if (subadmin && subadmin.password === password && subadmin.isActive) {
         (req.session as any).authenticated = true;
-        (req.session as any).username = agent.name;
-        (req.session as any).role = "agent";
-        (req.session as any).agentId = agent.id;
+        (req.session as any).username = subadmin.name;
+        (req.session as any).role = "admin";
+        (req.session as any).isPrimaryAdmin = false;
+        (req.session as any).agentId = undefined;
+        (req.session as any).subadminId = subadmin.id;
         res.json({ success: true });
       } else {
-        res.status(401).json({ message: "Invalid credentials" });
+        const agent = await storage.getAgentByUsername(username);
+        if (agent && agent.password === password) {
+          (req.session as any).authenticated = true;
+          (req.session as any).username = agent.name;
+          (req.session as any).role = "agent";
+          (req.session as any).isPrimaryAdmin = false;
+          (req.session as any).agentId = agent.id;
+          (req.session as any).subadminId = undefined;
+          res.json({ success: true });
+        } else {
+          res.status(401).json({ message: "Invalid credentials" });
+        }
       }
     }
   });
@@ -2554,6 +2582,7 @@ export async function registerRoutes(
         username: (req.session as any).username,
         role: (req.session as any).role || "admin",
         agentId: (req.session as any).agentId,
+        isPrimaryAdmin: (req.session as any).isPrimaryAdmin === true,
       });
     } else {
       res.json({ authenticated: false });
@@ -2565,6 +2594,19 @@ export async function registerRoutes(
       next();
     } else {
       res.status(403).json({ message: "Admin access required" });
+    }
+  };
+
+  const requirePrimaryAdmin = (req: any, res: any, next: any) => {
+    if (
+      req.session &&
+      req.session.authenticated &&
+      req.session.role === "admin" &&
+      req.session.isPrimaryAdmin === true
+    ) {
+      next();
+    } else {
+      res.status(403).json({ message: "Primary admin access required" });
     }
   };
 
@@ -4835,7 +4877,8 @@ Maximo 2 lineas. Se especifico y practico.`;
         return res.status(400).json({ message: "Name, username and password are required" });
       }
       const existing = await storage.getAgentByUsername(username);
-      if (existing) {
+      const existingSubadmin = await storage.getSubadminByUsername(username);
+      if (existing || existingSubadmin) {
         return res.status(400).json({ message: "Username already exists" });
       }
       const agent = await storage.createAgent({
@@ -4859,7 +4902,8 @@ Maximo 2 lineas. Se especifico y practico.`;
       const updates = req.body;
       if (updates.username) {
         const existing = await storage.getAgentByUsername(updates.username);
-        if (existing && existing.id !== id) {
+        const existingSubadmin = await storage.getSubadminByUsername(updates.username);
+        if ((existing && existing.id !== id) || existingSubadmin) {
           return res.status(400).json({ message: "Username already exists" });
         }
       }
@@ -4878,6 +4922,82 @@ Maximo 2 lineas. Se especifico y practico.`;
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Error deleting agent" });
+    }
+  });
+
+  app.get("/api/subadmins", requirePrimaryAdmin, async (_req, res) => {
+    try {
+      const subadmins = await storage.getSubadmins();
+      res.json(subadmins);
+    } catch (error) {
+      console.error("Error fetching subadmins:", error);
+      res.status(500).json({ message: "Error fetching subadmins" });
+    }
+  });
+
+  app.post("/api/subadmins", requirePrimaryAdmin, async (req, res) => {
+    try {
+      const parsed = upsertSubadminSchema.parse(req.body);
+      const existing = await storage.getSubadminByUsername(parsed.username);
+      const existingAgent = await storage.getAgentByUsername(parsed.username);
+      if (existing || existingAgent) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      const created = await storage.createSubadmin({
+        name: parsed.name,
+        username: parsed.username,
+        password: parsed.password,
+        isActive: parsed.isActive ?? true,
+      });
+      res.json(created);
+    } catch (error) {
+      console.error("Error creating subadmin:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0]?.message || "Invalid subadmin payload" });
+      }
+      res.status(500).json({ message: "Error creating subadmin" });
+    }
+  });
+
+  app.patch("/api/subadmins/:id", requirePrimaryAdmin, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid subadmin id" });
+      }
+
+      const parsed = updateSubadminSchema.parse(req.body);
+      if (parsed.username) {
+        const existing = await storage.getSubadminByUsername(parsed.username);
+        const existingAgent = await storage.getAgentByUsername(parsed.username);
+        if ((existing && existing.id !== id) || existingAgent) {
+          return res.status(400).json({ message: "Username already exists" });
+        }
+      }
+
+      const updated = await storage.updateSubadmin(id, parsed);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating subadmin:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0]?.message || "Invalid subadmin payload" });
+      }
+      res.status(500).json({ message: "Error updating subadmin" });
+    }
+  });
+
+  app.delete("/api/subadmins/:id", requirePrimaryAdmin, async (req, res) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid subadmin id" });
+      }
+      await storage.deleteSubadmin(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting subadmin:", error);
+      res.status(500).json({ message: "Error deleting subadmin" });
     }
   });
 

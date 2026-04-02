@@ -373,6 +373,9 @@ export default function AnalyticsPage() {
     let metaParallelCostTotal = 0;
     let openaiParallelCostTotal = 0;
     let elevenlabsCostTotal = 0;
+    let hasMetaCost = false;
+    let hasOpenaiCost = false;
+    let hasElevenlabsCost = false;
     let totalEstimatedParallelCost = 0;
     let hasTotalEstimatedCost = false;
 
@@ -384,12 +387,15 @@ export default function AnalyticsPage() {
       openaiTokens += Number(row.openai_tokens || 0);
       if (row.parallel_cost_bs != null) {
         metaParallelCostTotal += Number(row.parallel_cost_bs);
+        hasMetaCost = true;
       }
       if (row.openai_parallel_cost_bs != null) {
         openaiParallelCostTotal += Number(row.openai_parallel_cost_bs);
+        hasOpenaiCost = true;
       }
       if (row.elevenlabs_cost_bs != null) {
         elevenlabsCostTotal += Number(row.elevenlabs_cost_bs);
+        hasElevenlabsCost = true;
       }
       if (row.total_estimated_parallel_cost_bs != null) {
         totalEstimatedParallelCost += Number(row.total_estimated_parallel_cost_bs);
@@ -407,6 +413,9 @@ export default function AnalyticsPage() {
       metaParallelCostTotal,
       openaiParallelCostTotal,
       elevenlabsCostTotal,
+      hasMetaCost,
+      hasOpenaiCost,
+      hasElevenlabsCost,
       totalEstimatedParallelCost,
       hasTotalEstimatedCost,
     };
@@ -863,7 +872,7 @@ export default function AnalyticsPage() {
             })}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2">
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2">
               <p className="text-[11px] uppercase tracking-wide text-emerald-300">Recibidos</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.incoming}</p>
@@ -888,8 +897,26 @@ export default function AnalyticsPage() {
               <p className="text-[11px] uppercase tracking-wide text-fuchsia-300">Audios IA</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.outgoingAudios}</p>
             </div>
+            <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-indigo-300">OpenAI Bs</p>
+              <p className="text-lg font-semibold text-white">
+                {selectedTotals.hasOpenaiCost ? formatBs(selectedTotals.openaiParallelCostTotal) : "N/D"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-fuchsia-300">ElevenLabs Bs</p>
+              <p className="text-lg font-semibold text-white">
+                {selectedTotals.hasElevenlabsCost ? formatBs(selectedTotals.elevenlabsCostTotal) : "N/D"}
+              </p>
+            </div>
             <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 p-2">
-              <p className="text-[11px] uppercase tracking-wide text-violet-300">Costo estimado total</p>
+              <p className="text-[11px] uppercase tracking-wide text-violet-300">Meta Bs</p>
+              <p className="text-lg font-semibold text-white">
+                {selectedTotals.hasMetaCost ? formatBs(selectedTotals.metaParallelCostTotal) : "N/D"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-violet-300">Total a cobrar</p>
               <p className="text-lg font-semibold text-white">
                 {selectedTotals.hasTotalEstimatedCost ? formatBs(selectedTotals.totalEstimatedParallelCost) : "N/D"}
               </p>
@@ -944,7 +971,7 @@ export default function AnalyticsPage() {
                             ElevenLabs: <span className="font-semibold text-white">{formatBs(item.elevenlabsCostBs)}</span>
                           </p>
                           <p className="text-violet-200 font-semibold">
-                            Total estimado: <span className="text-white">{formatBs(item.totalEstimatedParallelCostBs)}</span>
+                            Total a cobrar: <span className="text-white">{formatBs(item.totalEstimatedParallelCostBs)}</span>
                           </p>
                         </div>
                       ) : (
@@ -1019,7 +1046,19 @@ export default function AnalyticsPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Total estimado</span>
+                        <span className="text-slate-400">OpenAI (Bs)</span>
+                        <span className="text-indigo-300 font-semibold">
+                          {row.openai_parallel_cost_bs == null ? "N/D" : formatBs(Number(row.openai_parallel_cost_bs))}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">ElevenLabs (Bs)</span>
+                        <span className="text-fuchsia-300 font-semibold">
+                          {row.elevenlabs_cost_bs == null ? "N/D" : formatBs(Number(row.elevenlabs_cost_bs))}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Total a cobrar</span>
                         <span className="text-violet-200 font-semibold">
                           {row.total_estimated_parallel_cost_bs == null ? "N/D" : formatBs(Number(row.total_estimated_parallel_cost_bs))}
                         </span>
@@ -1030,7 +1069,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-700/40">
-                <table className="min-w-[1280px] w-full text-sm table-fixed" data-testid="table-agent-stats">
+                <table className="min-w-[1480px] w-full text-sm table-fixed" data-testid="table-agent-stats">
                   <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
                     <tr className="border-b border-slate-700/50">
                       <th className="text-left py-2 px-2 text-slate-400 font-medium">Agente</th>
@@ -1046,7 +1085,9 @@ export default function AnalyticsPage() {
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Tokens OpenAI</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Audios IA</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Meta (paralelo)</th>
-                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Total estimado</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">OpenAI (Bs)</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">ElevenLabs (Bs)</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Total a cobrar</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1063,6 +1104,12 @@ export default function AnalyticsPage() {
                         <td className="py-2 px-2 text-center text-violet-300 font-semibold whitespace-nowrap">
                           {row.parallel_cost_bs == null ? "N/D" : formatBs(Number(row.parallel_cost_bs))}
                         </td>
+                        <td className="py-2 px-2 text-center text-indigo-300 font-semibold whitespace-nowrap">
+                          {row.openai_parallel_cost_bs == null ? "N/D" : formatBs(Number(row.openai_parallel_cost_bs))}
+                        </td>
+                        <td className="py-2 px-2 text-center text-fuchsia-300 font-semibold whitespace-nowrap">
+                          {row.elevenlabs_cost_bs == null ? "N/D" : formatBs(Number(row.elevenlabs_cost_bs))}
+                        </td>
                         <td className="py-2 px-2 text-center text-violet-200 font-semibold whitespace-nowrap">
                           {row.total_estimated_parallel_cost_bs == null ? "N/D" : formatBs(Number(row.total_estimated_parallel_cost_bs))}
                         </td>
@@ -1078,7 +1125,13 @@ export default function AnalyticsPage() {
                       <td className="py-2 px-2 text-center text-indigo-300 font-bold whitespace-nowrap">{selectedTotals.openaiTokens}</td>
                       <td className="py-2 px-2 text-center text-fuchsia-300 font-bold whitespace-nowrap">{selectedTotals.outgoingAudios}</td>
                       <td className="py-2 px-2 text-center text-violet-300 font-bold whitespace-nowrap">
-                        {formatBs(selectedTotals.metaParallelCostTotal)}
+                        {selectedTotals.hasMetaCost ? formatBs(selectedTotals.metaParallelCostTotal) : "N/D"}
+                      </td>
+                      <td className="py-2 px-2 text-center text-indigo-300 font-bold whitespace-nowrap">
+                        {selectedTotals.hasOpenaiCost ? formatBs(selectedTotals.openaiParallelCostTotal) : "N/D"}
+                      </td>
+                      <td className="py-2 px-2 text-center text-fuchsia-300 font-bold whitespace-nowrap">
+                        {selectedTotals.hasElevenlabsCost ? formatBs(selectedTotals.elevenlabsCostTotal) : "N/D"}
                       </td>
                       <td className="py-2 px-2 text-center text-violet-200 font-bold whitespace-nowrap">
                         {selectedTotals.hasTotalEstimatedCost ? formatBs(selectedTotals.totalEstimatedParallelCost) : "N/D"}

@@ -14,13 +14,21 @@ interface AgentStat {
   date: string;
   incoming: number;
   outgoing: number;
+  outgoing_audios?: number;
   inbound_chats: number;
+  openai_tokens?: number;
   unit_cost_bs?: number | null;
   official_rate_bs?: number | null;
   parallel_rate_bs?: number | null;
+  openai_usd_per_1k_tokens?: number | null;
+  elevenlabs_bs_per_audio?: number | null;
   base_cost_bs?: number | null;
   usd_cost?: number | null;
   parallel_cost_bs?: number | null;
+  openai_cost_usd?: number | null;
+  openai_parallel_cost_bs?: number | null;
+  elevenlabs_cost_bs?: number | null;
+  total_estimated_parallel_cost_bs?: number | null;
 }
 
 interface DailyCostSetting {
@@ -28,6 +36,8 @@ interface DailyCostSetting {
   unitCostBs: number;
   officialRateBs: number;
   parallelRateBs: number;
+  openaiUsdPer1kTokens?: number | null;
+  elevenlabsBsPerAudio?: number | null;
   updatedAt?: string | null;
 }
 
@@ -91,10 +101,21 @@ export default function AnalyticsPage() {
   const [unitCostBsInput, setUnitCostBsInput] = useState("");
   const [officialRateInput, setOfficialRateInput] = useState("");
   const [parallelRateInput, setParallelRateInput] = useState("");
+  const [openaiUsdPer1kInput, setOpenaiUsdPer1kInput] = useState("");
+  const [elevenlabsBsPerAudioInput, setElevenlabsBsPerAudioInput] = useState("");
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
   const agentsFilterInitializedRef = useRef(false);
 
   const normalizeDecimalInput = (value: string) => value.replace(",", ".").trim();
+  const parseOptionalDecimalInput = (value: string): number | null => {
+    const normalized = normalizeDecimalInput(value);
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error("Valor de costo invalido");
+    }
+    return parsed;
+  };
   const formatBs = (value: number) =>
     `${value.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs`;
   const formatUsd = (value: number) =>
@@ -162,11 +183,15 @@ export default function AnalyticsPage() {
       setUnitCostBsInput("");
       setOfficialRateInput("");
       setParallelRateInput("");
+      setOpenaiUsdPer1kInput("");
+      setElevenlabsBsPerAudioInput("");
       return;
     }
     setUnitCostBsInput(String(row.unitCostBs));
     setOfficialRateInput(String(row.officialRateBs));
     setParallelRateInput(String(row.parallelRateBs));
+    setOpenaiUsdPer1kInput(row.openaiUsdPer1kTokens == null ? "" : String(row.openaiUsdPer1kTokens));
+    setElevenlabsBsPerAudioInput(row.elevenlabsBsPerAudio == null ? "" : String(row.elevenlabsBsPerAudio));
   }, [costSettingsForDate, isAdmin]);
 
   const saveDailyCostMutation = useMutation({
@@ -174,6 +199,8 @@ export default function AnalyticsPage() {
       const unitCostBs = Number(normalizeDecimalInput(unitCostBsInput));
       const officialRateBs = Number(normalizeDecimalInput(officialRateInput));
       const parallelRateBs = Number(normalizeDecimalInput(parallelRateInput));
+      const openaiUsdPer1kTokens = parseOptionalDecimalInput(openaiUsdPer1kInput);
+      const elevenlabsBsPerAudio = parseOptionalDecimalInput(elevenlabsBsPerAudioInput);
 
       if (!Number.isFinite(unitCostBs) || unitCostBs <= 0) {
         throw new Error("Costo por chat invalido");
@@ -189,7 +216,13 @@ export default function AnalyticsPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ unitCostBs, officialRateBs, parallelRateBs }),
+        body: JSON.stringify({
+          unitCostBs,
+          officialRateBs,
+          parallelRateBs,
+          openaiUsdPer1kTokens,
+          elevenlabsBsPerAudio,
+        }),
       });
       if (!res.ok) {
         const errorBody = await res.json().catch(() => ({}));
@@ -335,16 +368,32 @@ export default function AnalyticsPage() {
     let incoming = 0;
     let outgoing = 0;
     let inboundChats = 0;
-    let parallelCostTotal = 0;
-    let hasParallelCost = false;
+    let outgoingAudios = 0;
+    let openaiTokens = 0;
+    let metaParallelCostTotal = 0;
+    let openaiParallelCostTotal = 0;
+    let elevenlabsCostTotal = 0;
+    let totalEstimatedParallelCost = 0;
+    let hasTotalEstimatedCost = false;
 
     for (const row of agentStatsFiltered) {
       incoming += Number(row.incoming || 0);
       outgoing += Number(row.outgoing || 0);
       inboundChats += Number(row.inbound_chats || 0);
+      outgoingAudios += Number(row.outgoing_audios || 0);
+      openaiTokens += Number(row.openai_tokens || 0);
       if (row.parallel_cost_bs != null) {
-        parallelCostTotal += Number(row.parallel_cost_bs);
-        hasParallelCost = true;
+        metaParallelCostTotal += Number(row.parallel_cost_bs);
+      }
+      if (row.openai_parallel_cost_bs != null) {
+        openaiParallelCostTotal += Number(row.openai_parallel_cost_bs);
+      }
+      if (row.elevenlabs_cost_bs != null) {
+        elevenlabsCostTotal += Number(row.elevenlabs_cost_bs);
+      }
+      if (row.total_estimated_parallel_cost_bs != null) {
+        totalEstimatedParallelCost += Number(row.total_estimated_parallel_cost_bs);
+        hasTotalEstimatedCost = true;
       }
     }
 
@@ -352,9 +401,14 @@ export default function AnalyticsPage() {
       incoming,
       outgoing,
       inboundChats,
+      outgoingAudios,
+      openaiTokens,
       totalMessages: incoming + outgoing,
-      parallelCostTotal,
-      hasParallelCost,
+      metaParallelCostTotal,
+      openaiParallelCostTotal,
+      elevenlabsCostTotal,
+      totalEstimatedParallelCost,
+      hasTotalEstimatedCost,
     };
   }, [agentStatsFiltered]);
 
@@ -365,11 +419,16 @@ export default function AnalyticsPage() {
         agentId: number;
         agentName: string;
         inboundChats: number;
-        unitCostBs: number | null;
-        baseCostBs: number;
-        usdCost: number;
-        parallelCostBs: number;
-        hasCost: boolean;
+        outgoingAudios: number;
+        openaiTokens: number;
+        metaUnitCostBs: number | null;
+        openaiUsdPer1kTokens: number | null;
+        elevenlabsBsPerAudio: number | null;
+        metaParallelCostBs: number;
+        openaiParallelCostBs: number;
+        elevenlabsCostBs: number;
+        totalEstimatedParallelCostBs: number;
+        hasAnyCost: boolean;
       }
     >();
 
@@ -379,21 +438,41 @@ export default function AnalyticsPage() {
         agentId: key,
         agentName: String(row.agent_name || `Agente ${key}`),
         inboundChats: 0,
-        unitCostBs: null,
-        baseCostBs: 0,
-        usdCost: 0,
-        parallelCostBs: 0,
-        hasCost: false,
+        outgoingAudios: 0,
+        openaiTokens: 0,
+        metaUnitCostBs: null,
+        openaiUsdPer1kTokens: null,
+        elevenlabsBsPerAudio: null,
+        metaParallelCostBs: 0,
+        openaiParallelCostBs: 0,
+        elevenlabsCostBs: 0,
+        totalEstimatedParallelCostBs: 0,
+        hasAnyCost: false,
       };
       current.inboundChats += Number(row.inbound_chats || 0);
+      current.outgoingAudios += Number(row.outgoing_audios || 0);
+      current.openaiTokens += Number(row.openai_tokens || 0);
       if (row.unit_cost_bs != null) {
-        current.unitCostBs = Number(row.unit_cost_bs);
+        current.metaUnitCostBs = Number(row.unit_cost_bs);
       }
-      if (row.base_cost_bs != null && row.usd_cost != null && row.parallel_cost_bs != null) {
-        current.baseCostBs += Number(row.base_cost_bs);
-        current.usdCost += Number(row.usd_cost);
-        current.parallelCostBs += Number(row.parallel_cost_bs);
-        current.hasCost = true;
+      if (row.openai_usd_per_1k_tokens != null) {
+        current.openaiUsdPer1kTokens = Number(row.openai_usd_per_1k_tokens);
+      }
+      if (row.elevenlabs_bs_per_audio != null) {
+        current.elevenlabsBsPerAudio = Number(row.elevenlabs_bs_per_audio);
+      }
+      if (row.parallel_cost_bs != null) {
+        current.metaParallelCostBs += Number(row.parallel_cost_bs);
+      }
+      if (row.openai_parallel_cost_bs != null) {
+        current.openaiParallelCostBs += Number(row.openai_parallel_cost_bs);
+      }
+      if (row.elevenlabs_cost_bs != null) {
+        current.elevenlabsCostBs += Number(row.elevenlabs_cost_bs);
+      }
+      if (row.total_estimated_parallel_cost_bs != null) {
+        current.totalEstimatedParallelCostBs += Number(row.total_estimated_parallel_cost_bs);
+        current.hasAnyCost = true;
       }
       grouped.set(key, current);
     }
@@ -538,7 +617,7 @@ export default function AnalyticsPage() {
         {isAdmin && (
           <div className="rounded-2xl border border-cyan-500/30 bg-slate-800/70 p-4">
             <h3 className="text-sm font-semibold text-white mb-3">Costo diario (admin)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Fecha</label>
                 <Input
@@ -549,11 +628,29 @@ export default function AnalyticsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400 mb-1 block">Costo por chat (Bs)</label>
+                <label className="text-xs text-slate-400 mb-1 block">Meta Ads por lead (Bs)</label>
                 <Input
                   value={unitCostBsInput}
                   onChange={(e) => setUnitCostBsInput(e.target.value)}
                   placeholder="Ej. 1.23"
+                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">OpenAI USD por 1k tokens</label>
+                <Input
+                  value={openaiUsdPer1kInput}
+                  onChange={(e) => setOpenaiUsdPer1kInput(e.target.value)}
+                  placeholder="Opcional. Ej. 0.15"
+                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">ElevenLabs Bs por audio</label>
+                <Input
+                  value={elevenlabsBsPerAudioInput}
+                  onChange={(e) => setElevenlabsBsPerAudioInput(e.target.value)}
+                  placeholder="Opcional. Ej. 0.35"
                   className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
                 />
               </div>
@@ -584,7 +681,7 @@ export default function AnalyticsPage() {
               </Button>
             </div>
             <p className="text-xs text-slate-500 mt-2">
-              Si un dia no tiene precio guardado, el monto se muestra como `N/D`.
+              Puede dejar OpenAI/ElevenLabs en blanco si no desea estimarlos ese dia. Si no hay precios diarios, el monto se muestra como `N/D`.
             </p>
           </div>
         )}
@@ -766,7 +863,7 @@ export default function AnalyticsPage() {
             })}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2">
               <p className="text-[11px] uppercase tracking-wide text-emerald-300">Recibidos</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.incoming}</p>
@@ -776,17 +873,25 @@ export default function AnalyticsPage() {
               <p className="text-lg font-semibold text-white">{selectedTotals.outgoing}</p>
             </div>
             <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2">
-              <p className="text-[11px] uppercase tracking-wide text-sky-300">Chats inbound</p>
+              <p className="text-[11px] uppercase tracking-wide text-sky-300">LEADS NUEVOS</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.inboundChats}</p>
             </div>
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2">
               <p className="text-[11px] uppercase tracking-wide text-amber-300">Total</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.totalMessages}</p>
             </div>
+            <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-indigo-300">Tokens OpenAI</p>
+              <p className="text-lg font-semibold text-white">{selectedTotals.openaiTokens}</p>
+            </div>
+            <div className="rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-fuchsia-300">Audios IA</p>
+              <p className="text-lg font-semibold text-white">{selectedTotals.outgoingAudios}</p>
+            </div>
             <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 p-2">
-              <p className="text-[11px] uppercase tracking-wide text-violet-300">Monto paralelo</p>
+              <p className="text-[11px] uppercase tracking-wide text-violet-300">Costo estimado total</p>
               <p className="text-lg font-semibold text-white">
-                {selectedTotals.hasParallelCost ? formatBs(selectedTotals.parallelCostTotal) : "N/D"}
+                {selectedTotals.hasTotalEstimatedCost ? formatBs(selectedTotals.totalEstimatedParallelCost) : "N/D"}
               </p>
             </div>
           </div>
@@ -799,7 +904,7 @@ export default function AnalyticsPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center shadow-lg">
               <Users className="h-4 w-4 text-white" />
             </div>
-            Chats con inbound y costo Meta Ads por agente
+            Costo estimado por agente (Meta + OpenAI + ElevenLabs)
           </h3>
           {agentSummaryCards.length > 0 ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -810,31 +915,40 @@ export default function AnalyticsPage() {
                   data-testid={`card-agent-cost-summary-${item.agentId}`}
                 >
                   <p className="text-sm font-semibold text-white mb-2">{item.agentName}</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <div className="rounded-lg border border-cyan-500/30 bg-slate-950/60 p-2.5">
-                      <p className="text-[11px] uppercase tracking-wide text-cyan-300">Chats con inbound</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-cyan-500/30 bg-slate-950/60 p-2.5 md:col-span-1">
+                      <p className="text-[11px] uppercase tracking-wide text-cyan-300">LEADS NUEVOS</p>
                       <p className="text-3xl font-bold text-slate-100 mt-1">{item.inboundChats}</p>
-                      <p className="text-[11px] text-slate-500">chats unicos con inbound</p>
+                      <p className="text-[11px] text-slate-500">leads nuevos del periodo</p>
                     </div>
-                    <div className="rounded-lg border border-violet-500/30 bg-slate-950/60 p-2.5">
-                      <p className="text-[11px] uppercase tracking-wide text-violet-300">COSTO META ADS</p>
-                      {item.hasCost ? (
+                    <div className="rounded-lg border border-violet-500/30 bg-slate-950/60 p-2.5 md:col-span-2">
+                      <p className="text-[11px] uppercase tracking-wide text-violet-300">COSTO ESTIMADO</p>
+                      {item.hasAnyCost ? (
                         <div className="text-sm leading-6">
                           <p className="text-slate-300">
-                            Costo por mensaje: <span className="font-semibold text-white">{item.unitCostBs == null ? "N/D" : formatBs(item.unitCostBs)}</span>
+                            Meta Ads (paralelo): <span className="font-semibold text-white">{formatBs(item.metaParallelCostBs)}</span>{" "}
+                            <span className="text-slate-500">(tarifa por lead: {item.metaUnitCostBs == null ? "N/D" : formatBs(item.metaUnitCostBs)})</span>
                           </p>
                           <p className="text-slate-300">
-                            Base: <span className="font-semibold text-white">{formatBs(item.baseCostBs)}</span>
+                            OpenAI tokens: <span className="font-semibold text-white">{item.openaiTokens}</span>{" "}
+                            <span className="text-slate-500">(tarifa: {item.openaiUsdPer1kTokens == null ? "N/D" : `${formatUsd(item.openaiUsdPer1kTokens)}/1k`})</span>
                           </p>
                           <p className="text-slate-300">
-                            USD: <span className="font-semibold text-white">{formatUsd(item.usdCost)}</span>
+                            OpenAI (paralelo): <span className="font-semibold text-white">{formatBs(item.openaiParallelCostBs)}</span>
                           </p>
                           <p className="text-slate-300">
-                            Paralelo: <span className="font-semibold text-white">{formatBs(item.parallelCostBs)}</span>
+                            ElevenLabs audios: <span className="font-semibold text-white">{item.outgoingAudios}</span>{" "}
+                            <span className="text-slate-500">(tarifa: {item.elevenlabsBsPerAudio == null ? "N/D" : formatBs(item.elevenlabsBsPerAudio)})</span>
+                          </p>
+                          <p className="text-slate-300">
+                            ElevenLabs: <span className="font-semibold text-white">{formatBs(item.elevenlabsCostBs)}</span>
+                          </p>
+                          <p className="text-violet-200 font-semibold">
+                            Total estimado: <span className="text-white">{formatBs(item.totalEstimatedParallelCostBs)}</span>
                           </p>
                         </div>
                       ) : (
-                        <p className="text-sm text-slate-500 mt-2">Sin precio diario (monto `N/D`)</p>
+                        <p className="text-sm text-slate-500 mt-2">Sin precios diarios para estimar costos</p>
                       )}
                     </div>
                   </div>
@@ -883,7 +997,7 @@ export default function AnalyticsPage() {
                         <span className="text-cyan-400 font-semibold">{row.outgoing}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Chats inbound</span>
+                        <span className="text-slate-400">LEADS NUEVOS</span>
                         <span className="text-sky-300 font-semibold">{row.inbound_chats}</span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -891,9 +1005,23 @@ export default function AnalyticsPage() {
                         <span className="text-amber-400 font-bold">{Number(row.incoming) + Number(row.outgoing)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Monto paralelo</span>
+                        <span className="text-slate-400">Tokens OpenAI</span>
+                        <span className="text-indigo-300 font-semibold">{Number(row.openai_tokens || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Audios IA</span>
+                        <span className="text-fuchsia-300 font-semibold">{Number(row.outgoing_audios || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Meta (paralelo)</span>
                         <span className="text-violet-300 font-semibold">
                           {row.parallel_cost_bs == null ? "N/D" : formatBs(Number(row.parallel_cost_bs))}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Total estimado</span>
+                        <span className="text-violet-200 font-semibold">
+                          {row.total_estimated_parallel_cost_bs == null ? "N/D" : formatBs(Number(row.total_estimated_parallel_cost_bs))}
                         </span>
                       </div>
                     </div>
@@ -902,7 +1030,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-700/40">
-                <table className="min-w-[980px] w-full text-sm table-fixed" data-testid="table-agent-stats">
+                <table className="min-w-[1280px] w-full text-sm table-fixed" data-testid="table-agent-stats">
                   <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
                     <tr className="border-b border-slate-700/50">
                       <th className="text-left py-2 px-2 text-slate-400 font-medium">Agente</th>
@@ -913,9 +1041,12 @@ export default function AnalyticsPage() {
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">
                         <span className="flex items-center justify-center gap-1"><SendIcon className="h-3 w-3" /> Enviados</span>
                       </th>
-                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Chats inbound</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">LEADS NUEVOS</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Total</th>
-                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Monto paralelo</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Tokens OpenAI</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Audios IA</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Meta (paralelo)</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Total estimado</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -927,8 +1058,13 @@ export default function AnalyticsPage() {
                         <td className="py-2 px-2 text-center text-cyan-400 font-semibold whitespace-nowrap">{row.outgoing}</td>
                         <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
                         <td className="py-2 px-2 text-center text-amber-400 font-bold whitespace-nowrap">{Number(row.incoming) + Number(row.outgoing)}</td>
+                        <td className="py-2 px-2 text-center text-indigo-300 font-semibold whitespace-nowrap">{Number(row.openai_tokens || 0)}</td>
+                        <td className="py-2 px-2 text-center text-fuchsia-300 font-semibold whitespace-nowrap">{Number(row.outgoing_audios || 0)}</td>
                         <td className="py-2 px-2 text-center text-violet-300 font-semibold whitespace-nowrap">
                           {row.parallel_cost_bs == null ? "N/D" : formatBs(Number(row.parallel_cost_bs))}
+                        </td>
+                        <td className="py-2 px-2 text-center text-violet-200 font-semibold whitespace-nowrap">
+                          {row.total_estimated_parallel_cost_bs == null ? "N/D" : formatBs(Number(row.total_estimated_parallel_cost_bs))}
                         </td>
                       </tr>
                     ))}
@@ -939,8 +1075,13 @@ export default function AnalyticsPage() {
                       <td className="py-2 px-2 text-center text-cyan-300 font-bold whitespace-nowrap">{selectedTotals.outgoing}</td>
                       <td className="py-2 px-2 text-center text-sky-300 font-bold whitespace-nowrap">{selectedTotals.inboundChats}</td>
                       <td className="py-2 px-2 text-center text-amber-300 font-bold whitespace-nowrap">{selectedTotals.totalMessages}</td>
+                      <td className="py-2 px-2 text-center text-indigo-300 font-bold whitespace-nowrap">{selectedTotals.openaiTokens}</td>
+                      <td className="py-2 px-2 text-center text-fuchsia-300 font-bold whitespace-nowrap">{selectedTotals.outgoingAudios}</td>
                       <td className="py-2 px-2 text-center text-violet-300 font-bold whitespace-nowrap">
-                        {selectedTotals.hasParallelCost ? formatBs(selectedTotals.parallelCostTotal) : "N/D"}
+                        {formatBs(selectedTotals.metaParallelCostTotal)}
+                      </td>
+                      <td className="py-2 px-2 text-center text-violet-200 font-bold whitespace-nowrap">
+                        {selectedTotals.hasTotalEstimatedCost ? formatBs(selectedTotals.totalEstimatedParallelCost) : "N/D"}
                       </td>
                     </tr>
                   </tbody>

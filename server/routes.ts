@@ -199,6 +199,8 @@ interface DailyCostSetting {
   unitCostBs: number;
   officialRateBs: number;
   parallelRateBs: number;
+  openaiUsdPer1kTokens?: number | null;
+  elevenlabsBsPerAudio?: number | null;
   updatedAt?: string | Date | null;
 }
 interface AnalyticsViewPermission {
@@ -314,8 +316,18 @@ async function ensureDailyCostSettingsTableExists() {
       unit_cost_bs NUMERIC(12, 4) NOT NULL,
       official_rate_bs NUMERIC(12, 4) NOT NULL,
       parallel_rate_bs NUMERIC(12, 4) NOT NULL,
+      openai_usd_per_1k_tokens NUMERIC(12, 6),
+      elevenlabs_bs_per_audio NUMERIC(12, 4),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+  await db.execute(sql`
+    ALTER TABLE daily_cost_settings
+    ADD COLUMN IF NOT EXISTS openai_usd_per_1k_tokens NUMERIC(12, 6)
+  `);
+  await db.execute(sql`
+    ALTER TABLE daily_cost_settings
+    ADD COLUMN IF NOT EXISTS elevenlabs_bs_per_audio NUMERIC(12, 4)
   `);
   dailyCostSettingsTableEnsured = true;
 }
@@ -338,6 +350,8 @@ function mapDailyCostSettingRow(row: any): DailyCostSetting {
     unitCostBs: Number(row.unit_cost_bs),
     officialRateBs: Number(row.official_rate_bs),
     parallelRateBs: Number(row.parallel_rate_bs),
+    openaiUsdPer1kTokens: row.openai_usd_per_1k_tokens == null ? null : Number(row.openai_usd_per_1k_tokens),
+    elevenlabsBsPerAudio: row.elevenlabs_bs_per_audio == null ? null : Number(row.elevenlabs_bs_per_audio),
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -3038,6 +3052,8 @@ export async function registerRoutes(
     unitCostBs: z.coerce.number().positive(),
     officialRateBs: z.coerce.number().positive(),
     parallelRateBs: z.coerce.number().positive(),
+    openaiUsdPer1kTokens: z.union([z.coerce.number().nonnegative(), z.null()]).optional(),
+    elevenlabsBsPerAudio: z.union([z.coerce.number().nonnegative(), z.null()]).optional(),
   });
 
   app.get("/api/daily-cost-settings", requireAuth, async (req, res) => {
@@ -3057,7 +3073,7 @@ export async function registerRoutes(
       }
 
       const rows: any = await db.execute(sql`
-        SELECT date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, updated_at
+        SELECT date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, openai_usd_per_1k_tokens, elevenlabs_bs_per_audio, updated_at
         FROM daily_cost_settings
         WHERE 1 = 1
           ${!dateFrom && !dateTo ? sql`AND date >= ((NOW() AT TIME ZONE 'America/La_Paz')::date - INTERVAL '29 days')::date` : sql``}
@@ -3085,15 +3101,24 @@ export async function registerRoutes(
 
       const parsed = dailyCostSettingsUpdateSchema.parse(req.body);
       const updated: any = await db.execute(sql`
-        INSERT INTO daily_cost_settings (date, unit_cost_bs, official_rate_bs, parallel_rate_bs)
-        VALUES (${date}::date, ${parsed.unitCostBs}, ${parsed.officialRateBs}, ${parsed.parallelRateBs})
+        INSERT INTO daily_cost_settings (date, unit_cost_bs, official_rate_bs, parallel_rate_bs, openai_usd_per_1k_tokens, elevenlabs_bs_per_audio)
+        VALUES (
+          ${date}::date,
+          ${parsed.unitCostBs},
+          ${parsed.officialRateBs},
+          ${parsed.parallelRateBs},
+          ${parsed.openaiUsdPer1kTokens ?? null},
+          ${parsed.elevenlabsBsPerAudio ?? null}
+        )
         ON CONFLICT (date)
         DO UPDATE SET
           unit_cost_bs = EXCLUDED.unit_cost_bs,
           official_rate_bs = EXCLUDED.official_rate_bs,
           parallel_rate_bs = EXCLUDED.parallel_rate_bs,
+          openai_usd_per_1k_tokens = EXCLUDED.openai_usd_per_1k_tokens,
+          elevenlabs_bs_per_audio = EXCLUDED.elevenlabs_bs_per_audio,
           updated_at = NOW()
-        RETURNING date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, updated_at
+        RETURNING date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, openai_usd_per_1k_tokens, elevenlabs_bs_per_audio, updated_at
       `);
       res.json(mapDailyCostSettingRow(updated.rows[0]));
     } catch (error: any) {
@@ -3134,6 +3159,7 @@ export async function registerRoutes(
           ) AT TIME ZONE 'America/La_Paz'
         )
       `;
+      const aiDayExpression = sql`DATE(al.created_at AT TIME ZONE 'America/La_Paz')`;
 
       const rows: any = await db.execute(sql`
         WITH stats AS (
@@ -3143,6 +3169,7 @@ export async function registerRoutes(
             ${dayExpression} AS date,
             COUNT(*) FILTER (WHERE m.direction IN ('in', 'incoming')) AS incoming,
             COUNT(*) FILTER (WHERE m.direction IN ('out', 'outgoing')) AS outgoing,
+            COUNT(*) FILTER (WHERE m.direction IN ('out', 'outgoing') AND m.type = 'audio') AS outgoing_audios,
             COUNT(DISTINCT m.conversation_id) FILTER (WHERE m.direction IN ('in', 'incoming')) AS inbound_chats
           FROM messages m
           JOIN conversations c ON m.conversation_id = c.id
@@ -3152,31 +3179,109 @@ export async function registerRoutes(
             ${dateFrom ? sql`AND ${dayExpression} >= ${dateFrom}::date` : sql``}
             ${dateTo ? sql`AND ${dayExpression} <= ${dateTo}::date` : sql``}
           GROUP BY a.id, a.name, ${dayExpression}
+        ),
+        ai_stats AS (
+          SELECT
+            a.id AS agent_id,
+            a.name AS agent_name,
+            ${aiDayExpression} AS date,
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(al.ai_response, '')) LIKE '[openai]%' THEN COALESCE(al.tokens_used, 0)
+                ELSE 0
+              END
+            ) AS openai_tokens
+          FROM ai_logs al
+          JOIN conversations c ON al.conversation_id = c.id
+          JOIN agents a ON c.assigned_agent_id = a.id
+          WHERE al.success = true
+            ${!dateFrom && !dateTo ? sql`AND ${aiDayExpression} >= ((NOW() AT TIME ZONE 'America/La_Paz')::date - INTERVAL '29 days')::date` : sql``}
+            ${dateFrom ? sql`AND ${aiDayExpression} >= ${dateFrom}::date` : sql``}
+            ${dateTo ? sql`AND ${aiDayExpression} <= ${dateTo}::date` : sql``}
+          GROUP BY a.id, a.name, ${aiDayExpression}
+        ),
+        combined AS (
+          SELECT
+            COALESCE(s.agent_id, ai.agent_id) AS agent_id,
+            COALESCE(s.agent_name, ai.agent_name) AS agent_name,
+            COALESCE(s.date, ai.date) AS date,
+            COALESCE(s.incoming, 0) AS incoming,
+            COALESCE(s.outgoing, 0) AS outgoing,
+            COALESCE(s.outgoing_audios, 0) AS outgoing_audios,
+            COALESCE(s.inbound_chats, 0) AS inbound_chats,
+            COALESCE(ai.openai_tokens, 0) AS openai_tokens
+          FROM stats s
+          FULL OUTER JOIN ai_stats ai
+            ON ai.agent_id = s.agent_id
+            AND ai.date = s.date
+        ),
+        scored AS (
+          SELECT
+            c.agent_id,
+            c.agent_name,
+            c.date::text AS date,
+            c.incoming,
+            c.outgoing,
+            c.outgoing_audios,
+            c.inbound_chats,
+            c.openai_tokens,
+            dcs.unit_cost_bs,
+            dcs.official_rate_bs,
+            dcs.parallel_rate_bs,
+            dcs.openai_usd_per_1k_tokens,
+            dcs.elevenlabs_bs_per_audio,
+            CASE
+              WHEN dcs.unit_cost_bs IS NULL THEN NULL
+              ELSE c.inbound_chats * dcs.unit_cost_bs
+            END AS base_cost_bs,
+            CASE
+              WHEN dcs.unit_cost_bs IS NULL OR dcs.official_rate_bs <= 0 THEN NULL
+              ELSE (c.inbound_chats * dcs.unit_cost_bs) / dcs.official_rate_bs
+            END AS usd_cost,
+            CASE
+              WHEN dcs.unit_cost_bs IS NULL OR dcs.official_rate_bs <= 0 OR dcs.parallel_rate_bs <= 0 THEN NULL
+              ELSE ((c.inbound_chats * dcs.unit_cost_bs) / dcs.official_rate_bs) * dcs.parallel_rate_bs
+            END AS parallel_cost_bs,
+            CASE
+              WHEN dcs.openai_usd_per_1k_tokens IS NULL THEN NULL
+              ELSE (c.openai_tokens::numeric / 1000.0) * dcs.openai_usd_per_1k_tokens
+            END AS openai_cost_usd,
+            CASE
+              WHEN dcs.openai_usd_per_1k_tokens IS NULL OR dcs.parallel_rate_bs <= 0 THEN NULL
+              ELSE ((c.openai_tokens::numeric / 1000.0) * dcs.openai_usd_per_1k_tokens) * dcs.parallel_rate_bs
+            END AS openai_parallel_cost_bs,
+            CASE
+              WHEN dcs.elevenlabs_bs_per_audio IS NULL THEN NULL
+              ELSE c.outgoing_audios * dcs.elevenlabs_bs_per_audio
+            END AS elevenlabs_cost_bs
+          FROM combined c
+          LEFT JOIN daily_cost_settings dcs ON dcs.date = c.date
         )
         SELECT
           s.agent_id,
           s.agent_name,
-          s.date::text AS date,
+          s.date,
           s.incoming,
           s.outgoing,
+          s.outgoing_audios,
           s.inbound_chats,
-          dcs.unit_cost_bs,
-          dcs.official_rate_bs,
-          dcs.parallel_rate_bs,
+          s.openai_tokens,
+          s.unit_cost_bs,
+          s.official_rate_bs,
+          s.parallel_rate_bs,
+          s.openai_usd_per_1k_tokens,
+          s.elevenlabs_bs_per_audio,
+          s.base_cost_bs,
+          s.usd_cost,
+          s.parallel_cost_bs,
+          s.openai_cost_usd,
+          s.openai_parallel_cost_bs,
+          s.elevenlabs_cost_bs,
           CASE
-            WHEN dcs.unit_cost_bs IS NULL THEN NULL
-            ELSE s.inbound_chats * dcs.unit_cost_bs
-          END AS base_cost_bs,
-          CASE
-            WHEN dcs.unit_cost_bs IS NULL OR dcs.official_rate_bs <= 0 THEN NULL
-            ELSE (s.inbound_chats * dcs.unit_cost_bs) / dcs.official_rate_bs
-          END AS usd_cost,
-          CASE
-            WHEN dcs.unit_cost_bs IS NULL OR dcs.official_rate_bs <= 0 OR dcs.parallel_rate_bs <= 0 THEN NULL
-            ELSE ((s.inbound_chats * dcs.unit_cost_bs) / dcs.official_rate_bs) * dcs.parallel_rate_bs
-          END AS parallel_cost_bs
-        FROM stats s
-        LEFT JOIN daily_cost_settings dcs ON dcs.date = s.date
+            WHEN s.parallel_cost_bs IS NULL AND s.openai_parallel_cost_bs IS NULL AND s.elevenlabs_cost_bs IS NULL THEN NULL
+            ELSE COALESCE(s.parallel_cost_bs, 0) + COALESCE(s.openai_parallel_cost_bs, 0) + COALESCE(s.elevenlabs_cost_bs, 0)
+          END AS total_estimated_parallel_cost_bs
+        FROM scored s
         ORDER BY s.date DESC, s.agent_name
       `);
 
@@ -3186,13 +3291,21 @@ export async function registerRoutes(
         date: String(row.date),
         incoming: Number(row.incoming || 0),
         outgoing: Number(row.outgoing || 0),
+        outgoing_audios: Number(row.outgoing_audios || 0),
         inbound_chats: Number(row.inbound_chats || 0),
+        openai_tokens: Number(row.openai_tokens || 0),
         unit_cost_bs: row.unit_cost_bs == null ? null : Number(row.unit_cost_bs),
         official_rate_bs: row.official_rate_bs == null ? null : Number(row.official_rate_bs),
         parallel_rate_bs: row.parallel_rate_bs == null ? null : Number(row.parallel_rate_bs),
+        openai_usd_per_1k_tokens: row.openai_usd_per_1k_tokens == null ? null : Number(row.openai_usd_per_1k_tokens),
+        elevenlabs_bs_per_audio: row.elevenlabs_bs_per_audio == null ? null : Number(row.elevenlabs_bs_per_audio),
         base_cost_bs: row.base_cost_bs == null ? null : Number(row.base_cost_bs),
         usd_cost: row.usd_cost == null ? null : Number(row.usd_cost),
         parallel_cost_bs: row.parallel_cost_bs == null ? null : Number(row.parallel_cost_bs),
+        openai_cost_usd: row.openai_cost_usd == null ? null : Number(row.openai_cost_usd),
+        openai_parallel_cost_bs: row.openai_parallel_cost_bs == null ? null : Number(row.openai_parallel_cost_bs),
+        elevenlabs_cost_bs: row.elevenlabs_cost_bs == null ? null : Number(row.elevenlabs_cost_bs),
+        total_estimated_parallel_cost_bs: row.total_estimated_parallel_cost_bs == null ? null : Number(row.total_estimated_parallel_cost_bs),
       }));
 
       const session = req.session as any;

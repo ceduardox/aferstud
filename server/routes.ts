@@ -9,14 +9,14 @@ import connectPgSimple from "connect-pg-simple";
 import axios from "axios";
 import { generateAiResponse } from "./ai-service";
 import { initFollowUp } from "./follow-up";
-import { insertProductSchema, updateOrderStatusSchema, type Message as StoredMessage, type Product as StoredProduct } from "@shared/schema";
+import { insertProductSchema, messages as messagesTable, updateOrderStatusSchema, type Message as StoredMessage, type Product as StoredProduct } from "@shared/schema";
 import { db, pool } from "./db";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
 import os from "os";
 import multer from "multer";
-import { sql } from "drizzle-orm";
+import { sql, eq, desc } from "drizzle-orm";
 import { spawn } from "child_process";
 import ffmpegStatic from "ffmpeg-static";
 
@@ -221,6 +221,7 @@ let conversationLabelColumnsEnsured = false;
 let adLeadRoutingTableEnsured = false;
 let dailyCostSettingsTableEnsured = false;
 let analyticsViewPermissionsTableEnsured = false;
+let aiLearnHistoryTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
@@ -344,6 +345,58 @@ async function ensureAnalyticsViewPermissionsTableExists() {
   analyticsViewPermissionsTableEnsured = true;
 }
 
+async function ensureAiLearnHistoryTableExists() {
+  if (aiLearnHistoryTableEnsured) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_learn_history (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+      focus TEXT,
+      message_count INTEGER NOT NULL DEFAULT 10,
+      suggested_rule TEXT,
+      tokens_used INTEGER,
+      model VARCHAR(80),
+      error TEXT,
+      saved_to_rules BOOLEAN NOT NULL DEFAULT false,
+      saved_rule_id INTEGER REFERENCES learned_rules(id) ON DELETE SET NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS focus TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS message_count INTEGER NOT NULL DEFAULT 10
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS suggested_rule TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS tokens_used INTEGER
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS model VARCHAR(80)
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS error TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS saved_to_rules BOOLEAN NOT NULL DEFAULT false
+  `);
+  await db.execute(sql`
+    ALTER TABLE ai_learn_history
+    ADD COLUMN IF NOT EXISTS saved_rule_id INTEGER REFERENCES learned_rules(id) ON DELETE SET NULL
+  `);
+  aiLearnHistoryTableEnsured = true;
+}
+
 function mapDailyCostSettingRow(row: any): DailyCostSetting {
   return {
     date: String(row.date),
@@ -362,6 +415,49 @@ function mapAnalyticsViewPermissionRow(row: any): AnalyticsViewPermission {
     visibleAgentIds: parseAgentIds(row.visible_agent_ids),
     updatedAt: row.updated_at ?? null,
   };
+}
+
+async function createAiLearnHistoryEntry(input: {
+  conversationId: number | null;
+  focus?: string | null;
+  messageCount: number;
+  suggestedRule?: string | null;
+  tokensUsed?: number | null;
+  model?: string | null;
+  error?: string | null;
+}) {
+  await ensureAiLearnHistoryTableExists();
+  const result: any = await db.execute(sql`
+    INSERT INTO ai_learn_history (
+      conversation_id,
+      focus,
+      message_count,
+      suggested_rule,
+      tokens_used,
+      model,
+      error
+    )
+    VALUES (
+      ${input.conversationId},
+      ${input.focus ?? null},
+      ${input.messageCount},
+      ${input.suggestedRule ?? null},
+      ${input.tokensUsed ?? null},
+      ${input.model ?? null},
+      ${input.error ?? null}
+    )
+    RETURNING id
+  `);
+  return Number(result?.rows?.[0]?.id || 0);
+}
+
+async function markAiLearnHistoryAsSaved(learnHistoryId: number, ruleId: number) {
+  await ensureAiLearnHistoryTableExists();
+  await db.execute(sql`
+    UPDATE ai_learn_history
+    SET saved_to_rules = true, saved_rule_id = ${ruleId}
+    WHERE id = ${learnHistoryId}
+  `);
 }
 
 function parseAgentIds(raw: unknown): number[] {
@@ -2659,6 +2755,75 @@ export async function registerRoutes(
     res.json({ conversation, messages });
   });
 
+  const updateMessageTextSchema = z.object({
+    text: z.string().trim().min(1).max(4000),
+  });
+
+  app.patch("/api/messages/:id", requireAuth, async (req, res) => {
+    try {
+      const messageId = Number(req.params.id);
+      if (!Number.isInteger(messageId) || messageId <= 0) {
+        return res.status(400).json({ message: "Invalid message id" });
+      }
+
+      const parsed = updateMessageTextSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid payload", errors: parsed.error.errors });
+      }
+
+      const [existingMessage] = await db
+        .select()
+        .from(messagesTable)
+        .where(eq(messagesTable.id, messageId))
+        .limit(1);
+
+      if (!existingMessage) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      if (existingMessage.direction !== "out") {
+        return res.status(400).json({ message: "Only outbound messages can be edited" });
+      }
+
+      if (!existingMessage.text || !existingMessage.text.trim()) {
+        return res.status(400).json({ message: "Only text messages can be edited" });
+      }
+
+      const conversation = await storage.getConversation(existingMessage.conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+
+      if ((req.session as any).role === "agent" && conversation.assignedAgentId !== (req.session as any).agentId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const nextText = parsed.data.text.trim();
+
+      const [updatedMessage] = await db
+        .update(messagesTable)
+        .set({ text: nextText })
+        .where(eq(messagesTable.id, messageId))
+        .returning();
+
+      const [latestMessageInConversation] = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(eq(messagesTable.conversationId, existingMessage.conversationId))
+        .orderBy(desc(messagesTable.createdAt), desc(messagesTable.id))
+        .limit(1);
+
+      if (latestMessageInConversation?.id === messageId) {
+        await storage.updateConversation(existingMessage.conversationId, { lastMessage: nextText });
+      }
+
+      res.json({ message: updatedMessage });
+    } catch (error) {
+      console.error("Error updating message text:", error);
+      res.status(500).json({ message: "Error updating message" });
+    }
+  });
+
   app.delete("/api/conversations/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
@@ -4445,7 +4610,7 @@ NO uses saludos formales. Se directo y amigable.`
   // Create learned rule
   app.post("/api/ai/rules", requireAuth, async (req, res) => {
     try {
-      const { rule, learnedFrom, conversationId } = req.body;
+      const { rule, learnedFrom, conversationId, learnHistoryId } = req.body;
       if (!rule) {
         return res.status(400).json({ message: "La regla es requerida" });
       }
@@ -4455,6 +4620,10 @@ NO uses saludos formales. Se directo y amigable.`
         conversationId: conversationId || null,
         isActive: true,
       });
+      const parsedLearnHistoryId = Number(learnHistoryId);
+      if (Number.isInteger(parsedLearnHistoryId) && parsedLearnHistoryId > 0) {
+        await markAiLearnHistoryAsSaved(parsedLearnHistoryId, created.id);
+      }
       res.json(created);
     } catch (error) {
       console.error("Error creating learned rule:", error);
@@ -4487,22 +4656,57 @@ NO uses saludos formales. Se directo y amigable.`
     }
   });
 
+  // Learn history (question + suggestion) for auditing
+  app.get("/api/ai/learn-history", requireAuth, async (req, res) => {
+    try {
+      const limitRaw = Number(req.query.limit);
+      const safeLimit = Number.isInteger(limitRaw) && limitRaw > 0
+        ? Math.min(limitRaw, 200)
+        : 100;
+      await ensureAiLearnHistoryTableExists();
+      const result: any = await db.execute(sql`
+        SELECT
+          id,
+          conversation_id AS "conversationId",
+          focus,
+          message_count AS "messageCount",
+          suggested_rule AS "suggestedRule",
+          tokens_used AS "tokensUsed",
+          model,
+          error,
+          saved_to_rules AS "savedToRules",
+          saved_rule_id AS "savedRuleId",
+          created_at AS "createdAt"
+        FROM ai_learn_history
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${safeLimit}
+      `);
+      res.json(result?.rows ?? []);
+    } catch (error) {
+      console.error("Error fetching ai learn history:", error);
+      res.status(500).json({ message: "Error al obtener historial de aprendizaje" });
+    }
+  });
+
   // Learn from conversation - AI analyzes and suggests a rule
   app.post("/api/ai/learn", requireAuth, async (req, res) => {
     try {
       const { conversationId, focus, messageCount } = req.body;
+      const parsedConversationId = Number(conversationId);
+      const parsedMessageCount = Math.min(50, Math.max(5, Number(messageCount) || 10));
+      const normalizedFocus = typeof focus === "string" ? focus.trim() : "";
       
-      if (!conversationId) {
+      if (!Number.isInteger(parsedConversationId) || parsedConversationId <= 0) {
         return res.status(400).json({ message: "conversationId es requerido" });
       }
 
-      const conversation = await storage.getConversation(conversationId);
+      const conversation = await storage.getConversation(parsedConversationId);
       if (!conversation) {
         return res.status(404).json({ message: "Conversacion no encontrada" });
       }
 
-      const messages = await storage.getMessages(conversationId);
-      const recentMessages = messages.slice(-(messageCount || 10));
+      const messages = await storage.getMessages(parsedConversationId);
+      const recentMessages = messages.slice(-parsedMessageCount);
 
       if (recentMessages.length === 0) {
         return res.status(400).json({ message: "No hay mensajes para analizar" });
@@ -4512,8 +4716,8 @@ NO uses saludos formales. Se directo y amigable.`
         `${m.direction === 'in' ? 'Cliente' : 'Agente'}: ${m.text || `[${m.type}]`}`
       ).join('\n');
 
-      const focusPrompt = focus 
-        ? `Enfocate especificamente en: ${focus}`
+      const focusPrompt = normalizedFocus
+        ? `Enfocate especificamente en: ${normalizedFocus}`
         : 'Identifica la leccion o estrategia mas importante';
 
       const prompt = `Analiza esta conversacion de ventas por WhatsApp y extrae UNA regla o estrategia que se pueda aplicar en futuras conversaciones.
@@ -4538,14 +4742,42 @@ Maximo 2 lineas. Se especifico y practico.`;
       });
 
       const suggestedRule = completion.choices[0]?.message?.content?.trim() || "";
+      const tokensUsed = completion.usage?.total_tokens || 0;
+      const learnHistoryId = await createAiLearnHistoryEntry({
+        conversationId: parsedConversationId,
+        focus: normalizedFocus || null,
+        messageCount: parsedMessageCount,
+        suggestedRule,
+        tokensUsed,
+        model: "gpt-4o-mini",
+      });
 
       res.json({
         suggestedRule,
-        tokensUsed: completion.usage?.total_tokens || 0,
-        conversationId,
+        tokensUsed,
+        conversationId: parsedConversationId,
+        learnHistoryId,
       });
     } catch (error: any) {
       console.error("Error learning from conversation:", error);
+      try {
+        const rawConversationId = Number(req.body?.conversationId);
+        const rawMessageCount = Math.min(50, Math.max(5, Number(req.body?.messageCount) || 10));
+        const rawFocus = typeof req.body?.focus === "string" ? req.body.focus.trim() : "";
+        if (Number.isInteger(rawConversationId) && rawConversationId > 0) {
+          await createAiLearnHistoryEntry({
+            conversationId: rawConversationId,
+            focus: rawFocus || null,
+            messageCount: rawMessageCount,
+            suggestedRule: null,
+            tokensUsed: null,
+            model: "gpt-4o-mini",
+            error: error?.message || "Error al analizar conversacion",
+          });
+        }
+      } catch (historyError) {
+        console.error("Error storing ai_learn_history failure:", historyError);
+      }
       res.status(500).json({ message: error.message || "Error al analizar conversacion" });
     }
   });

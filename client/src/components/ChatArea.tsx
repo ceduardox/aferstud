@@ -102,6 +102,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const [learnFocus, setLearnFocus] = useState("");
   const [learnMessageCount, setLearnMessageCount] = useState(10);
   const [suggestedRule, setSuggestedRule] = useState("");
+  const [learnHistoryId, setLearnHistoryId] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<"image" | "audio" | "video" | "document" | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -114,6 +115,9 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const [longPressActiveMessageId, setLongPressActiveMessageId] = useState<number | null>(null);
   const [longPressPressingMessageId, setLongPressPressingMessageId] = useState<number | null>(null);
   const [copyPressedMessageId, setCopyPressedMessageId] = useState<number | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState("");
+  const [editingOriginalText, setEditingOriginalText] = useState("");
   const longPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressMovedRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -349,6 +353,11 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
 
   useEffect(() => {
     setComposerText("");
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    setEditingOriginalText("");
+    setLongPressActiveMessageId(null);
+    setLongPressPressingMessageId(null);
     requestAnimationFrame(() => resizeMessageInput());
   }, [conversation.id]);
 
@@ -812,8 +821,9 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       });
       return res.json();
     },
-    onSuccess: (data: { suggestedRule: string }) => {
+    onSuccess: (data: { suggestedRule: string; learnHistoryId?: number }) => {
       setSuggestedRule(data.suggestedRule);
+      setLearnHistoryId(typeof data.learnHistoryId === "number" ? data.learnHistoryId : null);
     },
     onError: () => {
       toast({ title: "Error al analizar conversación", variant: "destructive" });
@@ -825,7 +835,8 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       const res = await apiRequest("POST", "/api/ai/rules", { 
         rule, 
         learnedFrom: learnFocus || "Análisis general",
-        conversationId: conversation.id 
+        conversationId: conversation.id,
+        learnHistoryId,
       });
       return res.json();
     },
@@ -834,6 +845,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       setShowLearnModal(false);
       setSuggestedRule("");
       setLearnFocus("");
+      setLearnHistoryId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/ai/rules"] });
     },
     onError: () => {
@@ -880,6 +892,33 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     onSuccess: (_, shouldCall) => {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       toast({ title: shouldCall ? "Marcado para llamar" : "Desmarcado" });
+    },
+  });
+
+  const updateMessageTextMutation = useMutation({
+    mutationFn: async ({ messageId, text }: { messageId: number; text: string }) => {
+      const res = await fetch(`/api/messages/${messageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "No se pudo actualizar el mensaje");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setEditingMessageId(null);
+      setEditingMessageText("");
+      setEditingOriginalText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations/:id", conversation.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Mensaje actualizado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al editar", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1088,6 +1127,36 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
         toast({ title: "No se pudo copiar", description: "Intenta de nuevo", variant: "destructive" });
       }
     }
+  };
+
+  const startEditingMessage = (msg: Message) => {
+    const currentText = (msg.text || "").trim();
+    if (!currentText || msg.direction !== "out") return;
+    setEditingMessageId(msg.id);
+    setEditingOriginalText(currentText);
+    setEditingMessageText(currentText);
+    setLongPressActiveMessageId(null);
+    setLongPressPressingMessageId(null);
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    setEditingOriginalText("");
+  };
+
+  const saveEditingMessage = () => {
+    if (!editingMessageId || updateMessageTextMutation.isPending) return;
+    const nextText = editingMessageText.trim();
+    if (!nextText) {
+      toast({ title: "Mensaje vacio", description: "Escribe un texto para guardar", variant: "destructive" });
+      return;
+    }
+    if (nextText === editingOriginalText) {
+      cancelEditingMessage();
+      return;
+    }
+    updateMessageTextMutation.mutate({ messageId: editingMessageId, text: nextText });
   };
 
   const clearLongPressTimeout = () => {
@@ -1780,7 +1849,10 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                   <div className="flex gap-2">
                     <Button 
                       variant="outline" 
-                      onClick={() => setSuggestedRule("")}
+                      onClick={() => {
+                        setSuggestedRule("");
+                        setLearnHistoryId(null);
+                      }}
                       className="flex-1"
                       data-testid="button-retry"
                     >
@@ -1856,11 +1928,13 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       >
         {messages.map((msg) => {
           const isOut = msg.direction === "out";
+          const canEditMessage = isOut && msg.type === "text" && Boolean(msg.text?.trim());
+          const isEditingThisMessage = editingMessageId === msg.id;
           return (
             <div key={msg.id} className={cn("flex w-full", isOut ? "justify-end" : "justify-start")}>
               <div
                 className={cn(
-                  "relative max-w-[85%] sm:max-w-[70%] rounded-lg px-3 py-2 text-sm shadow-sm transition-transform duration-150",
+                  "group relative max-w-[85%] sm:max-w-[70%] rounded-lg px-3 py-2 text-sm shadow-sm transition-transform duration-150",
                   isOut 
                     ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-tr-sm" 
                     : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-sm",
@@ -1878,34 +1952,66 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                 onTouchCancel={handleMessageTouchEnd}
                 onClick={(e) => e.stopPropagation()}
               >
-                {longPressActiveMessageId === msg.id && msg.text?.trim() && (
+                {canEditMessage && !isEditingThisMessage && (
                   <button
                     type="button"
                     className={cn(
-                      "absolute -top-3 right-1 z-10 rounded-full bg-slate-900/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-md transition-transform duration-100 active:scale-95",
-                      copyPressedMessageId === msg.id && "scale-95"
+                      "absolute -top-2 -left-2 z-10 rounded-full bg-white/95 p-1.5 text-slate-600 shadow ring-1 ring-slate-200 transition",
+                      isTouchDevice ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                     )}
-                    onTouchStart={(e) => {
-                      e.stopPropagation();
-                      setCopyPressedMessageId(msg.id);
-                    }}
-                    onTouchEnd={(e) => {
-                      e.stopPropagation();
-                      setCopyPressedMessageId(null);
-                    }}
-                    onTouchCancel={(e) => {
-                      e.stopPropagation();
-                      setCopyPressedMessageId(null);
-                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      void copyToClipboard(msg.text || "");
-                      setCopyPressedMessageId(null);
-                      setLongPressActiveMessageId(null);
+                      startEditingMessage(msg);
                     }}
+                    aria-label="Editar mensaje"
+                    title="Editar mensaje"
                   >
-                    Copiar
+                    <Pencil className="h-3.5 w-3.5" />
                   </button>
+                )}
+                {longPressActiveMessageId === msg.id && msg.text?.trim() && (
+                  <div className="absolute -top-3 right-1 z-10 flex items-center gap-1 rounded-full bg-slate-900/95 p-1 text-white shadow-md">
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition-transform duration-100 active:scale-95",
+                        copyPressedMessageId === msg.id && "scale-95"
+                      )}
+                      onTouchStart={(e) => {
+                        e.stopPropagation();
+                        setCopyPressedMessageId(msg.id);
+                      }}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        setCopyPressedMessageId(null);
+                      }}
+                      onTouchCancel={(e) => {
+                        e.stopPropagation();
+                        setCopyPressedMessageId(null);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void copyToClipboard(msg.text || "");
+                        setCopyPressedMessageId(null);
+                        setLongPressActiveMessageId(null);
+                      }}
+                    >
+                      Copiar
+                    </button>
+                    {canEditMessage && (
+                      <button
+                        type="button"
+                        className="rounded-full px-2 py-1 text-[11px] font-medium transition-transform duration-100 active:scale-95"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditingMessage(msg);
+                          setLongPressActiveMessageId(null);
+                        }}
+                      >
+                        Editar
+                      </button>
+                    )}
+                  </div>
                 )}
                 {msg.type === "image" && (
                   <div className="mb-2 rounded overflow-hidden">
@@ -2074,12 +2180,48 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                   );
                 })()}
                 
-                {msg.text && msg.type !== "document" && !(msg.type === "sticker" && msg.text.startsWith("[Sticker")) && (
-                  !(
-                    msg.type === "image" &&
-                    isImageLikeSource(msg.text)
-                  ) && (
-                    <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                {isEditingThisMessage ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={editingMessageText}
+                      onChange={(e) => setEditingMessageText(e.target.value)}
+                      className="min-h-[96px] resize-y bg-white/90 text-slate-900"
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cancelEditingMessage();
+                        }}
+                        disabled={updateMessageTextMutation.isPending}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          saveEditingMessage();
+                        }}
+                        disabled={updateMessageTextMutation.isPending || !editingMessageText.trim()}
+                      >
+                        {updateMessageTextMutation.isPending ? "Guardando..." : "Guardar"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  msg.text && msg.type !== "document" && !(msg.type === "sticker" && msg.text.startsWith("[Sticker")) && (
+                    !(
+                      msg.type === "image" &&
+                      isImageLikeSource(msg.text)
+                    ) && (
+                      <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                    )
                   )
                 )}
 

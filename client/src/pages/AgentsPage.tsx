@@ -133,6 +133,8 @@ export default function AgentsPage() {
   const [officialRateBs, setOfficialRateBs] = useState("");
   const [parallelRateBs, setParallelRateBs] = useState("");
   const [analyticsPermissionsDraft, setAnalyticsPermissionsDraft] = useState<Record<number, number[]>>({});
+  const [selectedAnalyticsViewerId, setSelectedAnalyticsViewerId] = useState<number | null>(null);
+  const [analyticsTargetSearch, setAnalyticsTargetSearch] = useState("");
 
   const { data: agents = [], isLoading } = useQuery<AgentWithStats[]>({
     queryKey: ["/api/agents", dateFrom, dateTo],
@@ -216,6 +218,17 @@ export default function AgentsPage() {
     }
     setAnalyticsPermissionsDraft(next);
   }, [agents, analyticsViewPermissions]);
+
+  useEffect(() => {
+    if (agents.length === 0) {
+      setSelectedAnalyticsViewerId(null);
+      return;
+    }
+    setSelectedAnalyticsViewerId((prev) => {
+      if (prev != null && agents.some((agent) => agent.id === prev)) return prev;
+      return agents[0].id;
+    });
+  }, [agents]);
 
   const saveDailyCostMutation = useMutation({
     mutationFn: async () => {
@@ -423,6 +436,32 @@ export default function AgentsPage() {
   };
 
   const getAgentName = (id: number) => agents.find((a) => a.id === id)?.name || `Agente ${id}`;
+  const selectedAnalyticsViewer =
+    agents.find((agent) => agent.id === selectedAnalyticsViewerId) ?? agents[0] ?? null;
+  const selectedViewerId = selectedAnalyticsViewer?.id ?? null;
+  const selectedVisibleIds = selectedViewerId == null
+    ? []
+    : (analyticsPermissionsDraft[selectedViewerId] || []).filter((id) => id !== selectedViewerId);
+  const selectedSummary = selectedVisibleIds.length > 0
+    ? selectedVisibleIds.map(getAgentName).join(", ")
+    : "Solo sus propias metricas";
+  const savingSelectedViewer =
+    saveAnalyticsPermissionMutation.isPending &&
+    saveAnalyticsPermissionMutation.variables?.viewerAgentId === selectedViewerId;
+  const normalizedAnalyticsSearch = analyticsTargetSearch.trim().toLowerCase();
+  const analyticsTargetAgents = selectedAnalyticsViewer
+    ? agents.filter((agent) => agent.id !== selectedAnalyticsViewer.id)
+    : [];
+  const filteredAnalyticsTargetAgents = analyticsTargetAgents.filter((agent) => {
+    if (!normalizedAnalyticsSearch) return true;
+    return (
+      agent.name.toLowerCase().includes(normalizedAnalyticsSearch) ||
+      agent.username.toLowerCase().includes(normalizedAnalyticsSearch)
+    );
+  });
+  const allFilteredTargetsSelected =
+    filteredAnalyticsTargetAgents.length > 0 &&
+    filteredAnalyticsTargetAgents.every((agent) => selectedVisibleIds.includes(agent.id));
 
   const performanceData = agents
     .map((agent) => ({
@@ -752,73 +791,127 @@ export default function AgentsPage() {
               Defina que agentes puede ver cada agente en la pagina de Analytics. Cada agente siempre mantiene acceso a sus propios datos.
             </p>
           </div>
-          <div className="space-y-3">
-            {agents.length === 0 ? (
-              <p className="text-xs text-slate-500">No hay agentes para configurar.</p>
-            ) : (
-              agents.map((viewerAgent) => {
-                const selectedVisibleIds = (analyticsPermissionsDraft[viewerAgent.id] || []).filter((id) => id !== viewerAgent.id);
-                const selectedSummary = selectedVisibleIds.length > 0
-                  ? selectedVisibleIds.map(getAgentName).join(", ")
-                  : "Solo sus propias metricas";
-                const savingThisAgent =
-                  saveAnalyticsPermissionMutation.isPending &&
-                  saveAnalyticsPermissionMutation.variables?.viewerAgentId === viewerAgent.id;
-
-                return (
-                  <div
-                    key={`analytics-permission-${viewerAgent.id}`}
-                    className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3"
-                    data-testid={`card-analytics-permissions-${viewerAgent.id}`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-white">{viewerAgent.name}</p>
-                        <p className="text-xs text-slate-400 mt-0.5 break-words">
-                          Puede ver: {selectedSummary}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        className="h-8 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
-                        disabled={saveAnalyticsPermissionMutation.isPending}
-                        onClick={() => {
-                          saveAnalyticsPermissionMutation.mutate({
-                            viewerAgentId: viewerAgent.id,
-                            visibleAgentIds: selectedVisibleIds,
-                          });
-                        }}
-                        data-testid={`button-save-analytics-permissions-${viewerAgent.id}`}
+          {agents.length === 0 || !selectedAnalyticsViewer ? (
+            <p className="text-xs text-slate-500">No hay agentes para configurar.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400 mb-2">Agente a configurar</p>
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {agents.map((viewerAgent) => {
+                    const viewerVisibleIds = (analyticsPermissionsDraft[viewerAgent.id] || []).filter((id) => id !== viewerAgent.id);
+                    const isSelectedViewer = selectedAnalyticsViewer.id === viewerAgent.id;
+                    return (
+                      <button
+                        key={`analytics-viewer-${viewerAgent.id}`}
+                        type="button"
+                        className={cn(
+                          "w-full rounded-lg border px-3 py-2 text-left transition",
+                          isSelectedViewer
+                            ? "border-emerald-500/60 bg-emerald-500/10"
+                            : "border-slate-700/70 bg-slate-800/40 hover:border-slate-500/70",
+                        )}
+                        onClick={() => setSelectedAnalyticsViewerId(viewerAgent.id)}
+                        data-testid={`button-select-analytics-viewer-${viewerAgent.id}`}
                       >
-                        {savingThisAgent ? "Guardando..." : "Guardar"}
-                      </Button>
-                    </div>
+                        <p className="text-sm font-medium text-white">{viewerAgent.name}</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Puede ver: {viewerVisibleIds.length} agente{viewerVisibleIds.length === 1 ? "" : "s"}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {agents
-                        .filter((targetAgent) => targetAgent.id !== viewerAgent.id)
-                        .map((targetAgent) => {
-                          const selected = selectedVisibleIds.includes(targetAgent.id);
-                          return (
-                            <Button
-                              key={`analytics-permission-target-${viewerAgent.id}-${targetAgent.id}`}
-                              type="button"
-                              size="sm"
-                              variant={selected ? "default" : "outline"}
-                              className={selected ? "bg-emerald-600 hover:bg-emerald-500" : "border-slate-600 text-slate-300"}
-                              onClick={() => toggleAnalyticsVisibleAgent(viewerAgent.id, targetAgent.id)}
-                              data-testid={`button-analytics-permission-target-${viewerAgent.id}-${targetAgent.id}`}
-                            >
-                              {targetAgent.name}
-                            </Button>
-                          );
-                        })}
-                    </div>
+              <div
+                className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3"
+                data-testid={`card-analytics-permissions-${selectedAnalyticsViewer.id}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white">{selectedAnalyticsViewer.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5 break-words">
+                      Puede ver: {selectedSummary}
+                    </p>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  <Button
+                    size="sm"
+                    className="h-8 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
+                    disabled={saveAnalyticsPermissionMutation.isPending || selectedViewerId == null}
+                    onClick={() => {
+                      if (selectedViewerId == null) return;
+                      saveAnalyticsPermissionMutation.mutate({
+                        viewerAgentId: selectedViewerId,
+                        visibleAgentIds: selectedVisibleIds,
+                      });
+                    }}
+                    data-testid={`button-save-analytics-permissions-${selectedAnalyticsViewer.id}`}
+                  >
+                    {savingSelectedViewer ? "Guardando..." : "Guardar"}
+                  </Button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Input
+                    value={analyticsTargetSearch}
+                    onChange={(e) => setAnalyticsTargetSearch(e.target.value)}
+                    placeholder="Buscar agente..."
+                    className="h-9 max-w-xs bg-slate-800/60 border-slate-700/50 text-white"
+                    data-testid="input-analytics-target-search"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 border-slate-600 text-slate-200"
+                    onClick={() => {
+                      if (selectedViewerId == null) return;
+                      setAnalyticsPermissionsDraft((prev) => {
+                        const current = Array.isArray(prev[selectedViewerId]) ? prev[selectedViewerId] : [];
+                        if (allFilteredTargetsSelected) {
+                          const filteredSet = new Set(filteredAnalyticsTargetAgents.map((agent) => agent.id));
+                          const next = current.filter((id) => !filteredSet.has(id));
+                          return { ...prev, [selectedViewerId]: next };
+                        }
+                        const nextSet = new Set(current);
+                        for (const target of filteredAnalyticsTargetAgents) {
+                          nextSet.add(target.id);
+                        }
+                        return { ...prev, [selectedViewerId]: Array.from(nextSet) };
+                      });
+                    }}
+                    data-testid="button-analytics-targets-select-toggle"
+                  >
+                    {allFilteredTargetsSelected ? "Quitar visibles" : "Marcar visibles"}
+                  </Button>
+                </div>
+
+                <div className="mt-3 flex max-h-56 flex-wrap content-start gap-2 overflow-y-auto pr-1">
+                  {filteredAnalyticsTargetAgents.length === 0 ? (
+                    <p className="text-xs text-slate-500">Sin resultados para ese filtro.</p>
+                  ) : (
+                    filteredAnalyticsTargetAgents.map((targetAgent) => {
+                      const selected = selectedVisibleIds.includes(targetAgent.id);
+                      return (
+                        <Button
+                          key={`analytics-permission-target-${selectedAnalyticsViewer.id}-${targetAgent.id}`}
+                          type="button"
+                          size="sm"
+                          variant={selected ? "default" : "outline"}
+                          className={selected ? "bg-emerald-600 hover:bg-emerald-500" : "border-slate-600 text-slate-300"}
+                          onClick={() => toggleAnalyticsVisibleAgent(selectedAnalyticsViewer.id, targetAgent.id)}
+                          data-testid={`button-analytics-permission-target-${selectedAnalyticsViewer.id}-${targetAgent.id}`}
+                        >
+                          {targetAgent.name}
+                        </Button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
@@ -1119,6 +1212,7 @@ function AgentCard({
 }) {
   const isEditing = editingId === agent.id;
   const [editName, setEditName] = useState(agent.name);
+  const [editUsername, setEditUsername] = useState(agent.username);
   const [editWeight, setEditWeight] = useState(agent.weight || 1);
   const [editPassword, setEditPassword] = useState(agent.password);
   const [showMobileStats, setShowMobileStats] = useState(false);
@@ -1140,6 +1234,7 @@ function AgentCard({
 
   const startEdit = () => {
     setEditName(agent.name);
+    setEditUsername(agent.username);
     setEditWeight(agent.weight || 1);
     setEditPassword(agent.password);
     setEditingId(agent.id);
@@ -1178,6 +1273,13 @@ function AgentCard({
                     data-testid="input-edit-agent-name"
                   />
                   <Input
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    className="bg-slate-800/60 border-slate-700/50 text-white h-8 w-32"
+                    placeholder="Usuario"
+                    data-testid="input-edit-agent-username"
+                  />
+                  <Input
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
                     className="bg-slate-800/60 border-slate-700/50 text-white h-8 w-32"
@@ -1198,10 +1300,14 @@ function AgentCard({
                   <Button
                     size="sm"
                     onClick={() => {
-                      onUpdate({ name: editName, password: editPassword, weight: editWeight });
+                      const nextName = editName.trim();
+                      const nextUsername = editUsername.trim();
+                      const nextPassword = editPassword.trim();
+                      if (!nextName || !nextUsername || !nextPassword) return;
+                      onUpdate({ name: nextName, username: nextUsername, password: nextPassword, weight: editWeight });
                       setEditingId(null);
                     }}
-                    disabled={isPending}
+                    disabled={isPending || !editName.trim() || !editUsername.trim() || !editPassword.trim()}
                     className="bg-gradient-to-r from-emerald-600 to-cyan-600 border-0 h-7 text-xs"
                     data-testid="button-save-edit-agent"
                   >

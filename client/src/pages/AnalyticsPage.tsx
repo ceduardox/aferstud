@@ -15,6 +15,8 @@ interface AgentStat {
   incoming: number;
   outgoing: number;
   outgoing_audios?: number;
+  inbound_new_chats?: number;
+  assigned_in_chats?: number;
   inbound_chats: number;
   openai_tokens?: number;
   unit_cost_bs?: number | null;
@@ -367,6 +369,8 @@ export default function AnalyticsPage() {
   const selectedTotals = useMemo(() => {
     let incoming = 0;
     let outgoing = 0;
+    let inboundNewChats = 0;
+    let assignedInChats = 0;
     let inboundChats = 0;
     let outgoingAudios = 0;
     let openaiTokens = 0;
@@ -382,6 +386,8 @@ export default function AnalyticsPage() {
     for (const row of agentStatsFiltered) {
       incoming += Number(row.incoming || 0);
       outgoing += Number(row.outgoing || 0);
+      inboundNewChats += Number(row.inbound_new_chats || 0);
+      assignedInChats += Number(row.assigned_in_chats || 0);
       inboundChats += Number(row.inbound_chats || 0);
       outgoingAudios += Number(row.outgoing_audios || 0);
       openaiTokens += Number(row.openai_tokens || 0);
@@ -406,6 +412,8 @@ export default function AnalyticsPage() {
     return {
       incoming,
       outgoing,
+      inboundNewChats,
+      assignedInChats,
       inboundChats,
       outgoingAudios,
       openaiTokens,
@@ -427,6 +435,8 @@ export default function AnalyticsPage() {
       {
         agentId: number;
         agentName: string;
+        inboundNewChats: number;
+        assignedInChats: number;
         inboundChats: number;
         outgoingAudios: number;
         openaiTokens: number;
@@ -446,6 +456,8 @@ export default function AnalyticsPage() {
       const current = grouped.get(key) || {
         agentId: key,
         agentName: String(row.agent_name || `Agente ${key}`),
+        inboundNewChats: 0,
+        assignedInChats: 0,
         inboundChats: 0,
         outgoingAudios: 0,
         openaiTokens: 0,
@@ -458,6 +470,8 @@ export default function AnalyticsPage() {
         totalEstimatedParallelCostBs: 0,
         hasAnyCost: false,
       };
+      current.inboundNewChats += Number(row.inbound_new_chats || 0);
+      current.assignedInChats += Number(row.assigned_in_chats || 0);
       current.inboundChats += Number(row.inbound_chats || 0);
       current.outgoingAudios += Number(row.outgoing_audios || 0);
       current.openaiTokens += Number(row.openai_tokens || 0);
@@ -881,10 +895,27 @@ export default function AnalyticsPage() {
               <p className="text-[11px] uppercase tracking-wide text-cyan-300">Enviados</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.outgoing}</p>
             </div>
-            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2">
-              <p className="text-[11px] uppercase tracking-wide text-sky-300">LEADS NUEVOS</p>
-              <p className="text-lg font-semibold text-white">{selectedTotals.inboundChats}</p>
-            </div>
+            {isAdmin ? (
+              <>
+                <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2">
+                  <p className="text-[11px] uppercase tracking-wide text-sky-300">Inbound nuevos</p>
+                  <p className="text-lg font-semibold text-white">{selectedTotals.inboundNewChats}</p>
+                </div>
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-2">
+                  <p className="text-[11px] uppercase tracking-wide text-blue-300">Asignados admin</p>
+                  <p className="text-lg font-semibold text-white">{selectedTotals.assignedInChats}</p>
+                </div>
+                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-2">
+                  <p className="text-[11px] uppercase tracking-wide text-indigo-300">Inbound facturable</p>
+                  <p className="text-lg font-semibold text-white">{selectedTotals.inboundChats}</p>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2">
+                <p className="text-[11px] uppercase tracking-wide text-sky-300">Chat Inbound</p>
+                <p className="text-lg font-semibold text-white">{selectedTotals.inboundChats}</p>
+              </div>
+            )}
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2">
               <p className="text-[11px] uppercase tracking-wide text-amber-300">Total</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.totalMessages}</p>
@@ -944,9 +975,13 @@ export default function AnalyticsPage() {
                   <p className="text-sm font-semibold text-white mb-2">{item.agentName}</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="rounded-lg border border-cyan-500/30 bg-slate-950/60 p-2.5 md:col-span-1">
-                      <p className="text-[11px] uppercase tracking-wide text-cyan-300">LEADS NUEVOS</p>
+                      <p className="text-[11px] uppercase tracking-wide text-cyan-300">Chat Inbound</p>
                       <p className="text-3xl font-bold text-slate-100 mt-1">{item.inboundChats}</p>
-                      <p className="text-[11px] text-slate-500">leads nuevos del periodo</p>
+                      <p className="text-[11px] text-slate-500">
+                        {isAdmin
+                          ? `${item.inboundNewChats} nuevos + ${item.assignedInChats} asignados`
+                          : "sumatoria del periodo"}
+                      </p>
                     </div>
                     <div className="rounded-lg border border-violet-500/30 bg-slate-950/60 p-2.5 md:col-span-2">
                       <p className="text-[11px] uppercase tracking-wide text-violet-300">COSTO ESTIMADO</p>
@@ -1024,9 +1059,30 @@ export default function AnalyticsPage() {
                         <span className="text-cyan-400 font-semibold">{row.outgoing}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">LEADS NUEVOS</span>
-                        <span className="text-sky-300 font-semibold">{row.inbound_chats}</span>
+                        {isAdmin ? (
+                          <>
+                            <span className="text-slate-400">Inbound nuevos</span>
+                            <span className="text-sky-300 font-semibold">{Number(row.inbound_new_chats || 0)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-slate-400">Chat Inbound</span>
+                            <span className="text-sky-300 font-semibold">{row.inbound_chats}</span>
+                          </>
+                        )}
                       </div>
+                      {isAdmin ? (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Asignados admin</span>
+                            <span className="text-blue-300 font-semibold">{Number(row.assigned_in_chats || 0)}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Inbound facturable</span>
+                            <span className="text-indigo-300 font-semibold">{row.inbound_chats}</span>
+                          </div>
+                        </>
+                      ) : null}
                       <div className="flex items-center justify-between">
                         <span className="text-slate-400">Total</span>
                         <span className="text-amber-400 font-bold">{Number(row.incoming) + Number(row.outgoing)}</span>
@@ -1069,7 +1125,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-700/40">
-                <table className="min-w-[1480px] w-full text-sm table-fixed" data-testid="table-agent-stats">
+                <table className="min-w-[1680px] w-full text-sm table-fixed" data-testid="table-agent-stats">
                   <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
                     <tr className="border-b border-slate-700/50">
                       <th className="text-left py-2 px-2 text-slate-400 font-medium">Agente</th>
@@ -1080,7 +1136,15 @@ export default function AnalyticsPage() {
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">
                         <span className="flex items-center justify-center gap-1"><SendIcon className="h-3 w-3" /> Enviados</span>
                       </th>
-                      <th className="text-center py-2 px-2 text-slate-400 font-medium">LEADS NUEVOS</th>
+                      {isAdmin ? (
+                        <>
+                          <th className="text-center py-2 px-2 text-slate-400 font-medium">Inbound nuevos</th>
+                          <th className="text-center py-2 px-2 text-slate-400 font-medium">Asignados admin</th>
+                          <th className="text-center py-2 px-2 text-slate-400 font-medium">Inbound facturable</th>
+                        </>
+                      ) : (
+                        <th className="text-center py-2 px-2 text-slate-400 font-medium">Chat Inbound</th>
+                      )}
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Total</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Tokens OpenAI</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Audios IA</th>
@@ -1097,7 +1161,15 @@ export default function AnalyticsPage() {
                         <td className="py-2 px-2 text-slate-300 whitespace-nowrap">{formatShortDateFromIso(row.date)}</td>
                         <td className="py-2 px-2 text-center text-emerald-400 font-semibold whitespace-nowrap">{row.incoming}</td>
                         <td className="py-2 px-2 text-center text-cyan-400 font-semibold whitespace-nowrap">{row.outgoing}</td>
-                        <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
+                        {isAdmin ? (
+                          <>
+                            <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{Number(row.inbound_new_chats || 0)}</td>
+                            <td className="py-2 px-2 text-center text-blue-300 font-semibold whitespace-nowrap">{Number(row.assigned_in_chats || 0)}</td>
+                            <td className="py-2 px-2 text-center text-indigo-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
+                          </>
+                        ) : (
+                          <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
+                        )}
                         <td className="py-2 px-2 text-center text-amber-400 font-bold whitespace-nowrap">{Number(row.incoming) + Number(row.outgoing)}</td>
                         <td className="py-2 px-2 text-center text-indigo-300 font-semibold whitespace-nowrap">{Number(row.openai_tokens || 0)}</td>
                         <td className="py-2 px-2 text-center text-fuchsia-300 font-semibold whitespace-nowrap">{Number(row.outgoing_audios || 0)}</td>
@@ -1120,7 +1192,15 @@ export default function AnalyticsPage() {
                       <td className="py-2 px-2 text-cyan-200 whitespace-nowrap">-</td>
                       <td className="py-2 px-2 text-center text-emerald-300 font-bold whitespace-nowrap">{selectedTotals.incoming}</td>
                       <td className="py-2 px-2 text-center text-cyan-300 font-bold whitespace-nowrap">{selectedTotals.outgoing}</td>
-                      <td className="py-2 px-2 text-center text-sky-300 font-bold whitespace-nowrap">{selectedTotals.inboundChats}</td>
+                      {isAdmin ? (
+                        <>
+                          <td className="py-2 px-2 text-center text-sky-300 font-bold whitespace-nowrap">{selectedTotals.inboundNewChats}</td>
+                          <td className="py-2 px-2 text-center text-blue-300 font-bold whitespace-nowrap">{selectedTotals.assignedInChats}</td>
+                          <td className="py-2 px-2 text-center text-indigo-300 font-bold whitespace-nowrap">{selectedTotals.inboundChats}</td>
+                        </>
+                      ) : (
+                        <td className="py-2 px-2 text-center text-sky-300 font-bold whitespace-nowrap">{selectedTotals.inboundChats}</td>
+                      )}
                       <td className="py-2 px-2 text-center text-amber-300 font-bold whitespace-nowrap">{selectedTotals.totalMessages}</td>
                       <td className="py-2 px-2 text-center text-indigo-300 font-bold whitespace-nowrap">{selectedTotals.openaiTokens}</td>
                       <td className="py-2 px-2 text-center text-fuchsia-300 font-bold whitespace-nowrap">{selectedTotals.outgoingAudios}</td>

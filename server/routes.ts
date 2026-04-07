@@ -221,6 +221,7 @@ let conversationLabelColumnsEnsured = false;
 let adLeadRoutingTableEnsured = false;
 let dailyCostSettingsTableEnsured = false;
 let analyticsViewPermissionsTableEnsured = false;
+let conversationAssignmentEventsTableEnsured = false;
 let aiLearnHistoryTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
@@ -345,6 +346,30 @@ async function ensureAnalyticsViewPermissionsTableExists() {
   analyticsViewPermissionsTableEnsured = true;
 }
 
+async function ensureConversationAssignmentEventsTableExists() {
+  if (conversationAssignmentEventsTableEnsured) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS conversation_assignment_events (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      from_agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      to_agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      assigned_by_role VARCHAR(20) NOT NULL DEFAULT 'admin',
+      assigned_by_agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_conversation_assignment_events_created_at
+    ON conversation_assignment_events (created_at)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_conversation_assignment_events_to_agent_created_at
+    ON conversation_assignment_events (to_agent_id, created_at)
+  `);
+  conversationAssignmentEventsTableEnsured = true;
+}
+
 async function ensureAiLearnHistoryTableExists() {
   if (aiLearnHistoryTableEnsured) return;
   await db.execute(sql`
@@ -457,6 +482,32 @@ async function markAiLearnHistoryAsSaved(learnHistoryId: number, ruleId: number)
     UPDATE ai_learn_history
     SET saved_to_rules = true, saved_rule_id = ${ruleId}
     WHERE id = ${learnHistoryId}
+  `);
+}
+
+async function createConversationAssignmentEvent(input: {
+  conversationId: number;
+  fromAgentId?: number | null;
+  toAgentId?: number | null;
+  assignedByRole: "admin" | "system" | "agent";
+  assignedByAgentId?: number | null;
+}) {
+  await ensureConversationAssignmentEventsTableExists();
+  await db.execute(sql`
+    INSERT INTO conversation_assignment_events (
+      conversation_id,
+      from_agent_id,
+      to_agent_id,
+      assigned_by_role,
+      assigned_by_agent_id
+    )
+    VALUES (
+      ${input.conversationId},
+      ${input.fromAgentId ?? null},
+      ${input.toAgentId ?? null},
+      ${input.assignedByRole},
+      ${input.assignedByAgentId ?? null}
+    )
   `);
 }
 
@@ -3299,6 +3350,7 @@ export async function registerRoutes(
   app.get("/api/agent-stats", requireAuth, async (req, res) => {
     try {
       await ensureDailyCostSettingsTableExists();
+      await ensureConversationAssignmentEventsTableExists();
 
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
@@ -3325,6 +3377,7 @@ export async function registerRoutes(
         )
       `;
       const aiDayExpression = sql`DATE(al.created_at AT TIME ZONE 'America/La_Paz')`;
+      const assignmentDayExpression = sql`DATE(ae.created_at AT TIME ZONE 'America/La_Paz')`;
 
       const rows: any = await db.execute(sql`
         WITH stats AS (
@@ -3335,7 +3388,7 @@ export async function registerRoutes(
             COUNT(*) FILTER (WHERE m.direction IN ('in', 'incoming')) AS incoming,
             COUNT(*) FILTER (WHERE m.direction IN ('out', 'outgoing')) AS outgoing,
             COUNT(*) FILTER (WHERE m.direction IN ('out', 'outgoing') AND m.type = 'audio') AS outgoing_audios,
-            COUNT(DISTINCT m.conversation_id) FILTER (WHERE m.direction IN ('in', 'incoming')) AS inbound_chats
+            COUNT(DISTINCT m.conversation_id) FILTER (WHERE m.direction IN ('in', 'incoming')) AS inbound_new_chats
           FROM messages m
           JOIN conversations c ON m.conversation_id = c.id
           JOIN agents a ON c.assigned_agent_id = a.id
@@ -3365,20 +3418,50 @@ export async function registerRoutes(
             ${dateTo ? sql`AND ${aiDayExpression} <= ${dateTo}::date` : sql``}
           GROUP BY a.id, a.name, ${aiDayExpression}
         ),
+        assignment_stats AS (
+          SELECT
+            a.id AS agent_id,
+            a.name AS agent_name,
+            ${assignmentDayExpression} AS date,
+            COUNT(DISTINCT ae.conversation_id) AS assigned_in_chats
+          FROM conversation_assignment_events ae
+          JOIN agents a ON ae.to_agent_id = a.id
+          WHERE ae.to_agent_id IS NOT NULL
+            AND ae.assigned_by_role = 'admin'
+            ${!dateFrom && !dateTo ? sql`AND ${assignmentDayExpression} >= ((NOW() AT TIME ZONE 'America/La_Paz')::date - INTERVAL '29 days')::date` : sql``}
+            ${dateFrom ? sql`AND ${assignmentDayExpression} >= ${dateFrom}::date` : sql``}
+            ${dateTo ? sql`AND ${assignmentDayExpression} <= ${dateTo}::date` : sql``}
+          GROUP BY a.id, a.name, ${assignmentDayExpression}
+        ),
+        combined_keys AS (
+          SELECT s.agent_id, s.date FROM stats s
+          UNION
+          SELECT ai.agent_id, ai.date FROM ai_stats ai
+          UNION
+          SELECT ass.agent_id, ass.date FROM assignment_stats ass
+        ),
         combined AS (
           SELECT
-            COALESCE(s.agent_id, ai.agent_id) AS agent_id,
-            COALESCE(s.agent_name, ai.agent_name) AS agent_name,
-            COALESCE(s.date, ai.date) AS date,
+            k.agent_id,
+            COALESCE(s.agent_name, ai.agent_name, ass.agent_name) AS agent_name,
+            k.date,
             COALESCE(s.incoming, 0) AS incoming,
             COALESCE(s.outgoing, 0) AS outgoing,
             COALESCE(s.outgoing_audios, 0) AS outgoing_audios,
-            COALESCE(s.inbound_chats, 0) AS inbound_chats,
+            COALESCE(s.inbound_new_chats, 0) AS inbound_new_chats,
+            COALESCE(ass.assigned_in_chats, 0) AS assigned_in_chats,
+            COALESCE(s.inbound_new_chats, 0) + COALESCE(ass.assigned_in_chats, 0) AS inbound_chats,
             COALESCE(ai.openai_tokens, 0) AS openai_tokens
-          FROM stats s
-          FULL OUTER JOIN ai_stats ai
-            ON ai.agent_id = s.agent_id
-            AND ai.date = s.date
+          FROM combined_keys k
+          LEFT JOIN stats s
+            ON s.agent_id = k.agent_id
+            AND s.date = k.date
+          LEFT JOIN ai_stats ai
+            ON ai.agent_id = k.agent_id
+            AND ai.date = k.date
+          LEFT JOIN assignment_stats ass
+            ON ass.agent_id = k.agent_id
+            AND ass.date = k.date
         ),
         scored AS (
           SELECT
@@ -3388,6 +3471,8 @@ export async function registerRoutes(
             c.incoming,
             c.outgoing,
             c.outgoing_audios,
+            c.inbound_new_chats,
+            c.assigned_in_chats,
             c.inbound_chats,
             c.openai_tokens,
             dcs.unit_cost_bs,
@@ -3429,6 +3514,8 @@ export async function registerRoutes(
           s.incoming,
           s.outgoing,
           s.outgoing_audios,
+          s.inbound_new_chats,
+          s.assigned_in_chats,
           s.inbound_chats,
           s.openai_tokens,
           s.unit_cost_bs,
@@ -3457,6 +3544,8 @@ export async function registerRoutes(
         incoming: Number(row.incoming || 0),
         outgoing: Number(row.outgoing || 0),
         outgoing_audios: Number(row.outgoing_audios || 0),
+        inbound_new_chats: Number(row.inbound_new_chats || 0),
+        assigned_in_chats: Number(row.assigned_in_chats || 0),
         inbound_chats: Number(row.inbound_chats || 0),
         openai_tokens: Number(row.openai_tokens || 0),
         unit_cost_bs: row.unit_cost_bs == null ? null : Number(row.unit_cost_bs),
@@ -3712,14 +3801,41 @@ export async function registerRoutes(
 
   // Reassign conversation to agent
   app.patch("/api/conversations/:id/assign", requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
-    const { agentId } = req.body;
-    if (agentId) {
-      await storage.assignConversationToAgent(id, agentId);
-    } else {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: "Invalid conversation id" });
+    }
+
+    const current = await storage.getConversation(id);
+    if (!current) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    const rawAgentId = req.body?.agentId;
+    const nextAgentId =
+      rawAgentId === null || rawAgentId === undefined || rawAgentId === ""
+        ? null
+        : Number(rawAgentId);
+
+    if (nextAgentId !== null && (!Number.isInteger(nextAgentId) || nextAgentId <= 0)) {
+      return res.status(400).json({ message: "Invalid agent id" });
+    }
+
+    if (nextAgentId === null) {
       const updated = await storage.updateConversation(id, { assignedAgentId: null });
       res.json(updated);
       return;
+    }
+
+    await storage.assignConversationToAgent(id, nextAgentId);
+    const previousAgentId = current.assignedAgentId ?? null;
+    if (previousAgentId !== nextAgentId) {
+      await createConversationAssignmentEvent({
+        conversationId: id,
+        fromAgentId: previousAgentId,
+        toAgentId: nextAgentId,
+        assignedByRole: "admin",
+      });
     }
     const updated = await storage.getConversation(id);
     res.json(updated);

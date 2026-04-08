@@ -5,7 +5,7 @@ import { useConversation, useConversations } from "@/hooks/use-inbox";
 import { NotificationBell } from "@/components/NotificationBell";
 import { KanbanView } from "@/components/KanbanView";
 import { Button } from "@/components/ui/button";
-import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound } from "lucide-react";
+import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link, useLocation } from "wouter";
 import {
@@ -204,6 +204,11 @@ export default function InboxPage() {
               <BarChart3 className="h-5 w-5" />
             </Button>
           </Link>
+          <Link href="/report">
+            <Button variant="ghost" size="icon" title="Informe" data-testid="button-report-desktop" className="text-slate-400 hover:text-amber-300 hover:bg-amber-500/10">
+              <FileText className="h-5 w-5" />
+            </Button>
+          </Link>
           {isAdmin && (
             <>
               <Link href="/follow-up">
@@ -295,12 +300,16 @@ export default function InboxPage() {
         </Link>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${(location === '/reminders' || location === '/push-settings' || location === '/follow-up' || location === '/agents' || location === '/access') ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
+            <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${(location === '/reminders' || location === '/push-settings' || location === '/follow-up' || location === '/agents' || location === '/access' || location === '/report') ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
               <EllipsisVertical className="h-5 w-5" />
               <span className="text-[10px] mt-0.5 font-medium">Mas</span>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="end" className="mb-2 w-48 bg-slate-900 border-slate-700 text-slate-200">
+            <DropdownMenuItem onClick={() => setLocation("/report")} className="focus:bg-slate-800">
+              <FileText className="h-4 w-4 mr-2 text-amber-300" />
+              Informe
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setLocation("/reminders")} className="focus:bg-slate-800">
               <Clock className="h-4 w-4 mr-2 text-amber-400" />
               Recordatorios

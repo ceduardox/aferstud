@@ -10,7 +10,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, Copy, FileText } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  Copy,
+  FileText,
+  Loader2,
+  MapPin,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneMissed,
+  Sparkles,
+  TrendingUp,
+  User2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type CityKey = "santaCruz" | "laPaz" | "cochabamba" | "tarija";
@@ -183,6 +200,11 @@ export default function ReportPage() {
   const [adminAgentId, setAdminAgentId] = useState<number | null>(null);
 
   const canEdit = isAgent;
+  const cardBase = "border-slate-700/50 bg-slate-900/55 backdrop-blur-sm rounded-2xl shadow-[0_18px_40px_rgba(2,6,23,.45)]";
+  const inputBase = "bg-slate-900/70 border-slate-600/60 text-white placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-0";
+  const textareaBase = "bg-slate-950/70 border-slate-700/60 text-slate-100 text-sm shadow-inner";
+  const tileBase = "rounded-2xl border border-slate-700/60 bg-slate-900/45 p-3 space-y-2 shadow-lg shadow-black/20";
+  const sectionIconBase = "h-9 w-9 rounded-xl flex items-center justify-center shadow-lg";
 
   const salesByCityNumbers = useMemo(() => {
     const values: Record<CityKey, Record<ProductKey, number>> = {
@@ -230,6 +252,8 @@ export default function ReportPage() {
   }), [reportDate, operatorName, callsMade, callsAnswered, callsMissed, callsPending, salesByCityNumbers]);
 
   const reportText = useMemo(() => buildReportText(currentPayload), [currentPayload]);
+  const callTotals = currentPayload.calls;
+  const answerRate = callTotals.made > 0 ? Math.round((callTotals.answered / callTotals.made) * 100) : 0;
 
   const handleCopy = async () => {
     try {
@@ -400,74 +424,133 @@ export default function ReportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-foreground flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700/60 bg-slate-900/80 backdrop-blur-md">
-        <Link href="/">
-          <Button variant="ghost" size="icon" className="text-slate-200 hover:text-white" data-testid="button-back-report">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div className="flex items-center gap-3">
-          <FileText className="h-5 w-5 text-emerald-400" />
-          <h1 className="text-lg font-semibold text-white">Informe diario</h1>
-          {canEdit && (
-            <span
-              className={cn(
-                "text-xs font-medium",
-                saveStatus === "saving" && "text-amber-300",
-                saveStatus === "saved" && "text-emerald-300",
-                saveStatus === "error" && "text-red-300",
-                saveStatus === "idle" && "text-slate-400",
-              )}
-            >
-              {saveStatus === "saving" && "Guardando..."}
-              {saveStatus === "saved" && `Guardado${lastSavedLabel ? ` ${lastSavedLabel}` : ""}`}
-              {saveStatus === "error" && "Error al guardar"}
-              {saveStatus === "idle" && "Auto-guardado"}
-            </span>
-          )}
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-foreground flex flex-col relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="absolute -bottom-32 -left-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.12),_transparent_55%)]" />
       </div>
+      <div className="relative z-10 flex flex-col min-h-screen">
+        <div className="flex flex-col gap-3 px-4 py-4 border-b border-emerald-500/20 bg-slate-900/70 backdrop-blur-xl md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/">
+              <Button variant="ghost" size="icon" className="text-slate-200 hover:text-white" data-testid="button-back-report">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <FileText className="h-5 w-5 text-slate-950" />
+            </div>
+            <div>
+              <h1 className="text-lg md:text-xl font-semibold text-white">Informe diario</h1>
+              <p className="text-xs text-slate-400">Resume llamadas y ventas por ciudad.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+                  saveStatus === "saving" && "border-amber-500/40 bg-amber-500/10 text-amber-200",
+                  saveStatus === "saved" && "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+                  saveStatus === "error" && "border-rose-500/40 bg-rose-500/10 text-rose-200",
+                  saveStatus === "idle" && "border-slate-600/60 bg-slate-800/60 text-slate-300",
+                )}
+              >
+                {saveStatus === "saving" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {saveStatus === "saved" && <CheckCircle2 className="h-3.5 w-3.5" />}
+                {saveStatus === "error" && <AlertTriangle className="h-3.5 w-3.5" />}
+                {saveStatus === "idle" && <Sparkles className="h-3.5 w-3.5" />}
+                {saveStatus === "saving" && "Guardando..."}
+                {saveStatus === "saved" && `Guardado${lastSavedLabel ? ` ${lastSavedLabel}` : ""}`}
+                {saveStatus === "error" && "Error al guardar"}
+                {saveStatus === "idle" && "Auto-guardado"}
+              </span>
+            )}
+            {!canEdit && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-800/60 px-3 py-1 text-xs text-slate-300">
+                Solo lectura
+              </span>
+            )}
+            {reportDate && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-800/60 px-3 py-1 text-xs text-slate-200">
+                <CalendarDays className="h-3.5 w-3.5 text-emerald-300" />
+                {formatReportDate(reportDate)}
+              </span>
+            )}
+          </div>
+        </div>
 
-      <div className="flex-1 w-full p-4 md:p-6 grid gap-3 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-3">
-          <Card className="border-slate-700/60 bg-slate-900/50">
-            <CardHeader>
-              <CardTitle className="text-base text-white">Datos generales</CardTitle>
+        <div className="flex-1 w-full p-4 md:p-6 grid gap-4 lg:grid-cols-[1fr_380px]">
+          <div className="space-y-3">
+          <Card className={cn(cardBase, "transition-all duration-300 hover:shadow-2xl hover:shadow-black/40")}>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={cn(sectionIconBase, "bg-gradient-to-br from-emerald-500 to-cyan-500 text-slate-950 shadow-emerald-500/30")}>
+                  <CalendarDays className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base text-white">Datos generales</CardTitle>
+                  <p className="text-xs text-slate-400">Fecha del informe y operador asignado.</p>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="report-date" className="text-xs uppercase tracking-wide text-slate-300">Fecha</Label>
+                <Label htmlFor="report-date" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                  <CalendarDays className="h-3.5 w-3.5 text-emerald-300" />
+                  Fecha
+                </Label>
                 <Input
                   id="report-date"
                   type="date"
                   value={reportDate}
                   onChange={(e) => setReportDate(e.target.value)}
                   disabled={!canEdit}
-                  className="bg-slate-800/60 border-slate-700 text-white"
+                  className={inputBase}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="operator-name" className="text-xs uppercase tracking-wide text-slate-300">Operador</Label>
+                <Label htmlFor="operator-name" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                  <User2 className="h-3.5 w-3.5 text-cyan-300" />
+                  Operador
+                </Label>
                 <Input
                   id="operator-name"
                   placeholder="Nombre completo"
                   value={operatorName}
                   onChange={(e) => setOperatorName(e.target.value)}
                   disabled={!canEdit}
-                  className="bg-slate-800/60 border-slate-700 text-white"
+                  className={inputBase}
                 />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-slate-700/60 bg-slate-900/50">
-            <CardHeader>
-              <CardTitle className="text-base text-white">Llamadas</CardTitle>
+          <Card className={cn(cardBase, "transition-all duration-300 hover:shadow-2xl hover:shadow-black/40")}>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={cn(sectionIconBase, "bg-gradient-to-br from-cyan-500 to-blue-500 text-slate-950 shadow-cyan-500/30")}>
+                  <PhoneCall className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base text-white">Llamadas</CardTitle>
+                  <p className="text-xs text-slate-400">Actividad telefonica del dia.</p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-600/60 bg-slate-900/60 px-2.5 py-1 text-xs text-slate-200">
+                <PhoneCall className="h-3.5 w-3.5 text-cyan-300" />
+                Total {callTotals.made}
+              </span>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
-                <Label htmlFor="calls-made" className="text-xs uppercase tracking-wide text-slate-300">Realizadas</Label>
+              <div className={cn(tileBase, "border-emerald-500/20")}>
+                <Label htmlFor="calls-made" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                  <span className="h-7 w-7 rounded-lg border border-emerald-500/30 bg-emerald-500/15 flex items-center justify-center text-emerald-300">
+                    <PhoneCall className="h-4 w-4" />
+                  </span>
+                  Realizadas
+                </Label>
                 <Input
                   id="calls-made"
                   type="number"
@@ -479,12 +562,17 @@ export default function ReportPage() {
                   onChange={(e) => setCallsMade(e.target.value)}
                   placeholder="Ej: 27"
                   disabled={!canEdit}
-                  className="bg-slate-800/60 border-slate-700 text-white"
+                  className={inputBase}
                 />
                 <p className="text-[11px] text-slate-500">Total de llamadas del dia.</p>
               </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
-                <Label htmlFor="calls-answered" className="text-xs uppercase tracking-wide text-slate-300">Contestadas</Label>
+              <div className={cn(tileBase, "border-cyan-500/20")}>
+                <Label htmlFor="calls-answered" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                  <span className="h-7 w-7 rounded-lg border border-cyan-500/30 bg-cyan-500/15 flex items-center justify-center text-cyan-300">
+                    <PhoneIncoming className="h-4 w-4" />
+                  </span>
+                  Contestadas
+                </Label>
                 <Input
                   id="calls-answered"
                   type="number"
@@ -496,12 +584,17 @@ export default function ReportPage() {
                   onChange={(e) => setCallsAnswered(e.target.value)}
                   placeholder="Ej: 13"
                   disabled={!canEdit}
-                  className="bg-slate-800/60 border-slate-700 text-white"
+                  className={inputBase}
                 />
                 <p className="text-[11px] text-slate-500">Llamadas con respuesta.</p>
               </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
-                <Label htmlFor="calls-missed" className="text-xs uppercase tracking-wide text-slate-300">No contestada</Label>
+              <div className={cn(tileBase, "border-rose-500/20")}>
+                <Label htmlFor="calls-missed" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                  <span className="h-7 w-7 rounded-lg border border-rose-500/30 bg-rose-500/15 flex items-center justify-center text-rose-300">
+                    <PhoneMissed className="h-4 w-4" />
+                  </span>
+                  No contestada
+                </Label>
                 <Input
                   id="calls-missed"
                   type="number"
@@ -513,12 +606,17 @@ export default function ReportPage() {
                   onChange={(e) => setCallsMissed(e.target.value)}
                   placeholder="Ej: 19"
                   disabled={!canEdit}
-                  className="bg-slate-800/60 border-slate-700 text-white"
+                  className={inputBase}
                 />
                 <p className="text-[11px] text-slate-500">Sin respuesta del cliente.</p>
               </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
-                <Label htmlFor="calls-pending" className="text-xs uppercase tracking-wide text-slate-300">Pendientes</Label>
+              <div className={cn(tileBase, "border-amber-500/20")}>
+                <Label htmlFor="calls-pending" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                  <span className="h-7 w-7 rounded-lg border border-amber-500/30 bg-amber-500/15 flex items-center justify-center text-amber-300">
+                    <Clock className="h-4 w-4" />
+                  </span>
+                  Pendientes
+                </Label>
                 <Input
                   id="calls-pending"
                   type="number"
@@ -530,27 +628,48 @@ export default function ReportPage() {
                   onChange={(e) => setCallsPending(e.target.value)}
                   placeholder="Ej: 0"
                   disabled={!canEdit}
-                  className="bg-slate-800/60 border-slate-700 text-white"
+                  className={inputBase}
                 />
                 <p className="text-[11px] text-slate-500">Por llamar o reintentar.</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-slate-700/60 bg-slate-900/50">
-            <CardHeader>
-              <CardTitle className="text-base text-white">Ventas por ciudad</CardTitle>
+          <Card className={cn(cardBase, "transition-all duration-300 hover:shadow-2xl hover:shadow-black/40")}>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={cn(sectionIconBase, "bg-gradient-to-br from-emerald-500 to-teal-500 text-slate-950 shadow-emerald-500/30")}>
+                  <MapPin className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base text-white">Ventas por ciudad</CardTitle>
+                  <p className="text-xs text-slate-400">Detalle por producto y zona.</p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
+                <TrendingUp className="h-3.5 w-3.5" />
+                Total ventas {totalSales}
+              </span>
             </CardHeader>
             <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               {CITIES.map((city) => (
-                <div key={city.key} className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-white">{city.label}</h3>
-                    <span className="text-xs text-slate-400">
-                      Total: <span className="text-slate-200 font-semibold">{totalsByCity[city.key]}</span>
+                <div key={city.key} className="group relative rounded-2xl border border-slate-700/60 bg-slate-900/45 p-3 shadow-lg shadow-black/20 overflow-hidden">
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="relative flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-lg border border-slate-600/60 bg-slate-900/70 flex items-center justify-center text-slate-300 group-hover:text-emerald-300">
+                        <MapPin className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">{city.label}</h3>
+                        <p className="text-[11px] text-slate-400">Ventas por producto</p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-slate-300 rounded-full border border-slate-600/60 bg-slate-900/70 px-2.5 py-1">
+                      Total {totalsByCity[city.key]}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {PRODUCTS.map((product) => (
                       <div key={product.key} className="space-y-1">
                         <Label htmlFor={`${city.key}-${product.key}`} className="text-[11px] uppercase tracking-wide text-slate-300">
@@ -567,7 +686,7 @@ export default function ReportPage() {
                           onChange={(e) => updateCityValue(city.key, product.key, e.target.value)}
                           placeholder="0"
                           disabled={!canEdit}
-                          className="bg-slate-800/60 border-slate-700 text-white"
+                          className={inputBase}
                         />
                       </div>
                     ))}
@@ -579,32 +698,95 @@ export default function ReportPage() {
         </div>
 
         <div className="space-y-4">
+          {canEdit && (
+            <Card className={cn(cardBase, "transition-all duration-300 hover:shadow-2xl hover:shadow-black/40")}>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={cn(sectionIconBase, "bg-gradient-to-br from-emerald-500 to-cyan-500 text-slate-950 shadow-emerald-500/30")}>
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base text-white">Resumen rapido</CardTitle>
+                    <p className="text-xs text-slate-400">Indicadores clave del dia.</p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
+                  {answerRate}% respuesta
+                </span>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-3">
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <TrendingUp className="h-4 w-4 text-emerald-300" />
+                    Total ventas
+                  </div>
+                  <div className="text-2xl font-semibold text-white">{totalSales}</div>
+                </div>
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-3">
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <PhoneCall className="h-4 w-4 text-cyan-300" />
+                    Llamadas
+                  </div>
+                  <div className="text-2xl font-semibold text-white">{callTotals.made}</div>
+                </div>
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-3">
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <PhoneIncoming className="h-4 w-4 text-emerald-300" />
+                    Contestadas
+                  </div>
+                  <div className="text-2xl font-semibold text-white">{callTotals.answered}</div>
+                </div>
+                <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-3">
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <PhoneMissed className="h-4 w-4 text-rose-300" />
+                    No contestadas
+                  </div>
+                  <div className="text-2xl font-semibold text-white">{callTotals.missed}</div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {isAdmin && (
-            <Card className="border-slate-700/60 bg-slate-900/50">
-              <CardHeader>
-                <CardTitle className="text-base text-white">Reporte por agente</CardTitle>
+            <Card className={cn(cardBase, "transition-all duration-300 hover:shadow-2xl hover:shadow-black/40")}>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={cn(sectionIconBase, "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-slate-950 shadow-violet-500/30")}>
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base text-white">Reporte por agente</CardTitle>
+                    <p className="text-xs text-slate-400">Consulta por fecha y agente.</p>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="admin-report-date" className="text-xs uppercase tracking-wide text-slate-300">Fecha</Label>
+                  <Label htmlFor="admin-report-date" className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                    <CalendarDays className="h-3.5 w-3.5 text-emerald-300" />
+                    Fecha
+                  </Label>
                   <Input
                     id="admin-report-date"
                     type="date"
                     value={adminDate}
                     onChange={(e) => setAdminDate(e.target.value)}
-                    className="bg-slate-800/60 border-slate-700 text-white"
+                    className={inputBase}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-wide text-slate-300">Agente</Label>
+                  <Label className="text-xs uppercase tracking-wide text-slate-300 flex items-center gap-2">
+                    <User2 className="h-3.5 w-3.5 text-cyan-300" />
+                    Agente
+                  </Label>
                   <Select
                     value={adminAgentId ? String(adminAgentId) : ""}
                     onValueChange={(value) => setAdminAgentId(Number(value))}
                   >
-                    <SelectTrigger className="bg-slate-800/60 border-slate-700 text-white">
+                    <SelectTrigger className={inputBase}>
                       <SelectValue placeholder="Seleccione agente" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
                       {agents.map((agent) => (
                         <SelectItem key={agent.id} value={String(agent.id)}>
                           {agent.name}
@@ -622,7 +804,7 @@ export default function ReportPage() {
                     size="sm"
                     onClick={handleCopyAdmin}
                     disabled={!adminReport}
-                    className="border-slate-600 text-slate-200"
+                    className="border-slate-600/60 text-slate-200 hover:bg-slate-800/70"
                   >
                     <Copy className="h-4 w-4 mr-2" />
                     Copiar
@@ -631,17 +813,30 @@ export default function ReportPage() {
                 <Textarea
                   value={adminReportText}
                   readOnly
-                  className={cn("min-h-[280px] bg-slate-950/60 border-slate-700 text-slate-100 text-sm")}
+                  className={cn(textareaBase, "min-h-[280px]")}
                 />
               </CardContent>
             </Card>
           )}
 
           {canEdit && (
-            <Card className="border-slate-700/60 bg-slate-900/50 sticky top-4">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base text-white">Texto para copiar</CardTitle>
-                <Button variant="outline" size="sm" onClick={handleCopy} className="border-slate-600 text-slate-200">
+            <Card className={cn(cardBase, "sticky top-4 transition-all duration-300 hover:shadow-2xl hover:shadow-black/40")}>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={cn(sectionIconBase, "bg-gradient-to-br from-emerald-500 to-cyan-500 text-slate-950 shadow-emerald-500/30")}>
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base text-white">Texto para copiar</CardTitle>
+                    <p className="text-xs text-slate-400">Se actualiza en vivo.</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopy}
+                  className="border-emerald-500/40 text-emerald-100 hover:bg-emerald-500/10"
+                >
                   <Copy className="h-4 w-4 mr-2" />
                   Copiar
                 </Button>
@@ -650,7 +845,7 @@ export default function ReportPage() {
                 <Textarea
                   value={reportText}
                   readOnly
-                  className={cn("min-h-[360px] bg-slate-950/60 border-slate-700 text-slate-100 text-sm")}
+                  className={cn(textareaBase, "min-h-[360px]")}
                 />
               </CardContent>
             </Card>
@@ -658,6 +853,7 @@ export default function ReportPage() {
         </div>
       </div>
     </div>
+  </div>
   );
 }
 

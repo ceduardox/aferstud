@@ -310,6 +310,28 @@ async function ensureAdLeadRoutingTableExists() {
   adLeadRoutingTableEnsured = true;
 }
 
+let dailyReportsTableEnsured = false;
+async function ensureDailyReportsTableExists() {
+  if (dailyReportsTableEnsured) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS daily_reports (
+      id SERIAL PRIMARY KEY,
+      report_date DATE NOT NULL,
+      agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      operator_name TEXT NOT NULL DEFAULT '',
+      calls_made INTEGER NOT NULL DEFAULT 0,
+      calls_answered INTEGER NOT NULL DEFAULT 0,
+      calls_missed INTEGER NOT NULL DEFAULT 0,
+      calls_pending INTEGER NOT NULL DEFAULT 0,
+      sales_by_city JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT daily_reports_unique_day_agent UNIQUE (report_date, agent_id)
+    )
+  `);
+  dailyReportsTableEnsured = true;
+}
+
 async function ensureDailyCostSettingsTableExists() {
   if (dailyCostSettingsTableEnsured) return;
   await db.execute(sql`
@@ -528,12 +550,67 @@ function normalizeAdId(raw: unknown): string {
     .replace(/\s+/g, "");
 }
 
+function normalizeReportDate(raw: unknown): string | null {
+  const value = String(raw ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return value;
+}
+
 function mapAdLeadRoutingRow(row: any): AdLeadRoutingRule {
   return {
     id: Number(row.id),
     adId: String(row.ad_id || ""),
     agentIds: parseAgentIds(row.agent_ids),
     isActive: Boolean(row.is_active),
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+type DailyReport = {
+  id: number;
+  reportDate: string;
+  agentId: number;
+  operatorName: string;
+  calls: {
+    made: number;
+    answered: number;
+    missed: number;
+    pending: number;
+  };
+  salesByCity: Record<string, Record<string, number>>;
+  updatedAt: Date | string | null;
+};
+
+function parseSalesByCity(raw: any): Record<string, Record<string, number>> {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw as Record<string, Record<string, number>>;
+  try {
+    return JSON.parse(String(raw));
+  } catch {
+    return {};
+  }
+}
+
+function normalizeReportDateOutput(raw: any): string {
+  if (!raw) return "";
+  const date = raw instanceof Date ? raw : new Date(raw);
+  if (Number.isNaN(date.getTime())) return String(raw);
+  return date.toISOString().slice(0, 10);
+}
+
+function mapDailyReportRow(row: any): DailyReport {
+  return {
+    id: Number(row.id),
+    reportDate: normalizeReportDateOutput(row.report_date),
+    agentId: Number(row.agent_id),
+    operatorName: String(row.operator_name || ""),
+    calls: {
+      made: Number(row.calls_made || 0),
+      answered: Number(row.calls_answered || 0),
+      missed: Number(row.calls_missed || 0),
+      pending: Number(row.calls_pending || 0),
+    },
+    salesByCity: parseSalesByCity(row.sales_by_city),
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -2828,6 +2905,29 @@ export async function registerRoutes(
     text: z.string().trim().min(1).max(4000),
   });
 
+  const reportSalesSchema = z.object({
+    citrato: z.number().int().min(0).max(10000),
+    berberina: z.number().int().min(0).max(10000),
+    berberina2: z.number().int().min(0).max(10000),
+  });
+
+  const reportPayloadSchema = z.object({
+    reportDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    operatorName: z.string().trim().max(120).optional().default(""),
+    calls: z.object({
+      made: z.number().int().min(0).max(10000),
+      answered: z.number().int().min(0).max(10000),
+      missed: z.number().int().min(0).max(10000),
+      pending: z.number().int().min(0).max(10000),
+    }),
+    salesByCity: z.object({
+      santaCruz: reportSalesSchema,
+      laPaz: reportSalesSchema,
+      cochabamba: reportSalesSchema,
+      tarija: reportSalesSchema,
+    }),
+  });
+
   app.patch("/api/messages/:id", requireAuth, async (req, res) => {
     try {
       const messageId = Number(req.params.id);
@@ -3958,6 +4058,141 @@ export async function registerRoutes(
       reminderUpdatedAt: null,
     });
     res.json(updated);
+  });
+
+  // === DAILY REPORTS ===
+  app.get("/api/reports/me", requireAuth, async (req, res) => {
+    try {
+      const session = req.session as any;
+      if (session.role !== "agent" || !session.agentId) {
+        return res.status(403).json({ message: "Agent access required" });
+      }
+
+      const reportDate = normalizeReportDate(req.query.date);
+      await ensureDailyReportsTableExists();
+
+      let report: DailyReport | null = null;
+      if (reportDate) {
+        const result: any = await db.execute(sql`
+          SELECT id, report_date, agent_id, operator_name, calls_made, calls_answered, calls_missed, calls_pending, sales_by_city, updated_at
+          FROM daily_reports
+          WHERE agent_id = ${session.agentId}
+            AND report_date = ${reportDate}::date
+          LIMIT 1
+        `);
+        const row = result?.rows?.[0];
+        report = row ? mapDailyReportRow(row) : null;
+      }
+
+      const latestResult: any = await db.execute(sql`
+        SELECT operator_name
+        FROM daily_reports
+        WHERE agent_id = ${session.agentId}
+          AND operator_name <> ''
+        ORDER BY report_date DESC, updated_at DESC
+        LIMIT 1
+      `);
+      const latestOperatorName = String(latestResult?.rows?.[0]?.operator_name || "");
+
+      res.json({ report, latestOperatorName });
+    } catch (error) {
+      console.error("Error fetching daily report:", error);
+      res.status(500).json({ message: "Error fetching report" });
+    }
+  });
+
+  app.put("/api/reports/me", requireAuth, async (req, res) => {
+    try {
+      const session = req.session as any;
+      if (session.role !== "agent" || !session.agentId) {
+        return res.status(403).json({ message: "Agent access required" });
+      }
+
+      const parsed = reportPayloadSchema.parse(req.body);
+      const reportDate = normalizeReportDate(parsed.reportDate);
+      if (!reportDate) {
+        return res.status(400).json({ message: "Invalid report date" });
+      }
+
+      await ensureDailyReportsTableExists();
+      const salesByCityJson = JSON.stringify(parsed.salesByCity);
+
+      const result: any = await db.execute(sql`
+        INSERT INTO daily_reports (
+          report_date,
+          agent_id,
+          operator_name,
+          calls_made,
+          calls_answered,
+          calls_missed,
+          calls_pending,
+          sales_by_city
+        )
+        VALUES (
+          ${reportDate}::date,
+          ${session.agentId},
+          ${parsed.operatorName || ""},
+          ${parsed.calls.made},
+          ${parsed.calls.answered},
+          ${parsed.calls.missed},
+          ${parsed.calls.pending},
+          ${salesByCityJson}::jsonb
+        )
+        ON CONFLICT (report_date, agent_id) DO UPDATE SET
+          operator_name = EXCLUDED.operator_name,
+          calls_made = EXCLUDED.calls_made,
+          calls_answered = EXCLUDED.calls_answered,
+          calls_missed = EXCLUDED.calls_missed,
+          calls_pending = EXCLUDED.calls_pending,
+          sales_by_city = EXCLUDED.sales_by_city,
+          updated_at = NOW()
+        RETURNING id, report_date, agent_id, operator_name, calls_made, calls_answered, calls_missed, calls_pending, sales_by_city, updated_at
+      `);
+
+      const row = result?.rows?.[0];
+      res.json(row ? mapDailyReportRow(row) : null);
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid report data", errors: error.errors });
+      }
+      console.error("Error saving report:", error);
+      res.status(500).json({ message: "Error saving report" });
+    }
+  });
+
+  app.get("/api/reports/agent/:agentId", requireAdmin, async (req, res) => {
+    try {
+      const agentId = Number(req.params.agentId);
+      if (!Number.isInteger(agentId) || agentId <= 0) {
+        return res.status(400).json({ message: "Invalid agent id" });
+      }
+
+      const reportDate = normalizeReportDate(req.query.date);
+      await ensureDailyReportsTableExists();
+
+      const result: any = reportDate
+        ? await db.execute(sql`
+            SELECT id, report_date, agent_id, operator_name, calls_made, calls_answered, calls_missed, calls_pending, sales_by_city, updated_at
+            FROM daily_reports
+            WHERE agent_id = ${agentId}
+              AND report_date = ${reportDate}::date
+            LIMIT 1
+          `)
+        : await db.execute(sql`
+            SELECT id, report_date, agent_id, operator_name, calls_made, calls_answered, calls_missed, calls_pending, sales_by_city, updated_at
+            FROM daily_reports
+            WHERE agent_id = ${agentId}
+            ORDER BY report_date DESC, updated_at DESC
+            LIMIT 1
+          `);
+
+      const row = result?.rows?.[0];
+      const report = row ? mapDailyReportRow(row) : null;
+      res.json({ report });
+    } catch (error) {
+      console.error("Error fetching agent report:", error);
+      res.status(500).json({ message: "Error fetching report" });
+    }
   });
 
   // Toggle pin

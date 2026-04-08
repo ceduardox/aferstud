@@ -286,7 +286,7 @@ export class DatabaseStorage implements IStorage {
     const { limit, before, assignedAgentId, search } = options;
     const safeLimit =
       typeof limit === "number"
-        ? Math.max(1, Math.min(limit, 600))
+        ? Math.max(1, Math.min(limit, 5000))
         : undefined;
 
     const filters: any[] = [];

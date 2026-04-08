@@ -26,6 +26,7 @@ const pulseLineAnimation = `
 export default function InboxPage() {
   const INITIAL_VISIBLE_CONVERSATIONS = 50;
   const LOAD_MORE_STEP = 20;
+  const MAX_SERVER_LIMIT = 5000;
   const { logout, user, isAdmin, isPrimaryAdmin } = useAuth();
   const [daysToShow, setDaysToShow] = useState(7);
   const [location, setLocation] = useLocation();
@@ -37,10 +38,10 @@ export default function InboxPage() {
     () => {
       const query = searchQuery.trim();
       if (query) {
-        return Math.min(Math.max(visibleConversations, 200), 600);
+        return Math.min(Math.max(visibleConversations, 200), MAX_SERVER_LIMIT);
       }
       // Keep enough backlog so operational columns can show their own 50 (+20) cards.
-      return Math.min(Math.max(visibleConversations * 6, 120), 600);
+      return Math.min(Math.max(visibleConversations * 6, 120), MAX_SERVER_LIMIT);
     },
     [searchQuery, visibleConversations],
   );

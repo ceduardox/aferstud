@@ -548,6 +548,18 @@ async function getAdLeadRoutingRules(): Promise<AdLeadRoutingRule[]> {
   return (result?.rows ?? []).map((row: any) => mapAdLeadRoutingRow(row));
 }
 
+async function getExclusiveAdRoutingAgentIds(): Promise<Set<number>> {
+  const rules = await getAdLeadRoutingRules();
+  const reserved = new Set<number>();
+  for (const rule of rules) {
+    if (!rule.isActive) continue;
+    for (const id of rule.agentIds) {
+      reserved.add(id);
+    }
+  }
+  return reserved;
+}
+
 async function getAdLeadRoutingRuleByAdId(adIdRaw: string): Promise<AdLeadRoutingRule | null> {
   await ensureAdLeadRoutingTableExists();
   const adId = normalizeAdId(adIdRaw);
@@ -2554,7 +2566,9 @@ export async function registerRoutes(
               if (!conversation) {
                 const incomingAdId = extractAdIdFromIncomingMessage(msg);
                 const adRouting = incomingAdId ? await getNextAgentForAdIdRouting(incomingAdId) : {};
-                const nextAgent = adRouting.agent || await storage.getNextAgentForAssignment();
+                const nextAgent = adRouting.agent || await storage.getNextAgentForAssignment({
+                  excludeAgentIds: await getExclusiveAdRoutingAgentIds(),
+                });
                 conversation = await storage.createConversation({
                   waId: from,
                   contactName: name,

@@ -39,6 +39,10 @@ import {
 } from "@shared/schema";
 import { eq, and, lt, desc, asc, sql } from "drizzle-orm";
 
+type AssignmentOptions = {
+  excludeAgentIds?: Iterable<number>;
+};
+
 export interface IStorage {
   // Auth
   validateAdmin(username: string, password: string): Promise<boolean>;
@@ -111,7 +115,7 @@ export interface IStorage {
   deleteAgent(id: number): Promise<void>;
   getActiveAgents(): Promise<Agent[]>;
   assignConversationToAgent(conversationId: number, agentId: number): Promise<void>;
-  getNextAgentForAssignment(): Promise<Agent | undefined>;
+  getNextAgentForAssignment(options?: AssignmentOptions): Promise<Agent | undefined>;
   deleteConversation(id: number): Promise<void>;
 
   // Subadmins
@@ -714,25 +718,31 @@ export class DatabaseStorage implements IStorage {
     await db.update(conversations).set({ assignedAgentId: agentId }).where(eq(conversations.id, conversationId));
   }
 
-  async getNextAgentForAssignment(): Promise<Agent | undefined> {
+  async getNextAgentForAssignment(options: AssignmentOptions = {}): Promise<Agent | undefined> {
     const activeAgents = await this.getActiveAgents();
     if (activeAgents.length === 0) return undefined;
 
+    const excludeIds = new Set<number>(options.excludeAgentIds ?? []);
+    const eligibleAgents = excludeIds.size
+      ? activeAgents.filter((agent) => !excludeIds.has(agent.id))
+      : activeAgents;
+    if (eligibleAgents.length === 0) return undefined;
+
     const weightedSlots: number[] = [];
-    for (const agent of activeAgents) {
+    for (const agent of eligibleAgents) {
       const weight = Math.max(1, Math.floor(Number(agent.weight ?? 1)));
       for (let i = 0; i < weight; i++) {
         weightedSlots.push(agent.id);
       }
     }
-    if (weightedSlots.length === 0) return activeAgents[0];
+    if (weightedSlots.length === 0) return eligibleAgents[0];
 
     const cursor = await this.getAssignmentCursor();
     const nextCursor = ((cursor + 1) % weightedSlots.length + weightedSlots.length) % weightedSlots.length;
     await this.setAssignmentCursor(nextCursor);
 
     const nextAgentId = weightedSlots[nextCursor];
-    return activeAgents.find((agent) => agent.id === nextAgentId) || activeAgents[0];
+    return eligibleAgents.find((agent) => agent.id === nextAgentId) || eligibleAgents[0];
   }
 
   async deleteConversation(id: number): Promise<void> {

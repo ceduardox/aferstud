@@ -679,7 +679,8 @@ export default function AgentsPage() {
           <div className="mb-3">
             <h3 className="text-sm font-semibold text-white">Asignacion por anuncio (ad_id)</h3>
             <p className="text-xs text-slate-400">
-              Opcional: si no hay regla o agentes activos en esa regla, el sistema usa la asignacion normal actual.
+              Opcional: si no hay regla o agentes activos en esa regla, el sistema usa la asignacion normal actual.{" "}
+              Los agentes en reglas activas solo reciben mensajes de esos anuncios.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 mb-3">

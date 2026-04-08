@@ -25,7 +25,7 @@ const PRODUCTS: Array<{ key: ProductKey; label: string }> = [
   { key: "berberina2", label: "Berberina 2.0" },
 ];
 
-const dayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const dayNames = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
 
 function formatReportDate(value: string) {
   if (!value) return "";
@@ -164,15 +164,15 @@ export default function ReportPage() {
         </div>
       </div>
 
-      <div className="flex-1 w-full p-4 md:p-6 grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
+      <div className="flex-1 w-full p-4 md:p-6 grid gap-3 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-3">
           <Card className="border-slate-700/60 bg-slate-900/50">
             <CardHeader>
               <CardTitle className="text-base text-white">Datos generales</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="report-date">Fecha</Label>
+                <Label htmlFor="report-date" className="text-xs uppercase tracking-wide text-slate-300">Fecha</Label>
                 <Input
                   id="report-date"
                   type="date"
@@ -182,7 +182,7 @@ export default function ReportPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="operator-name">Operador</Label>
+                <Label htmlFor="operator-name" className="text-xs uppercase tracking-wide text-slate-300">Operador</Label>
                 <Input
                   id="operator-name"
                   placeholder="Nombre completo"
@@ -198,50 +198,58 @@ export default function ReportPage() {
             <CardHeader>
               <CardTitle className="text-base text-white">Llamadas</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="calls-made">Realizadas</Label>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
+                <Label htmlFor="calls-made" className="text-xs uppercase tracking-wide text-slate-300">Realizadas</Label>
                 <Input
                   id="calls-made"
                   type="number"
                   min={0}
                   value={callsMade}
                   onChange={(e) => setCallsMade(e.target.value)}
+                  placeholder="Ej: 27"
                   className="bg-slate-800/60 border-slate-700 text-white"
                 />
+                <p className="text-[11px] text-slate-500">Total de llamadas del dia.</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="calls-answered">Contestadas</Label>
+              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
+                <Label htmlFor="calls-answered" className="text-xs uppercase tracking-wide text-slate-300">Contestadas</Label>
                 <Input
                   id="calls-answered"
                   type="number"
                   min={0}
                   value={callsAnswered}
                   onChange={(e) => setCallsAnswered(e.target.value)}
+                  placeholder="Ej: 13"
                   className="bg-slate-800/60 border-slate-700 text-white"
                 />
+                <p className="text-[11px] text-slate-500">Llamadas con respuesta.</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="calls-missed">No contestada</Label>
+              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
+                <Label htmlFor="calls-missed" className="text-xs uppercase tracking-wide text-slate-300">No contestada</Label>
                 <Input
                   id="calls-missed"
                   type="number"
                   min={0}
                   value={callsMissed}
                   onChange={(e) => setCallsMissed(e.target.value)}
+                  placeholder="Ej: 19"
                   className="bg-slate-800/60 border-slate-700 text-white"
                 />
+                <p className="text-[11px] text-slate-500">Sin respuesta del cliente.</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="calls-pending">Pendientes</Label>
+              <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-2">
+                <Label htmlFor="calls-pending" className="text-xs uppercase tracking-wide text-slate-300">Pendientes</Label>
                 <Input
                   id="calls-pending"
                   type="number"
                   min={0}
                   value={callsPending}
                   onChange={(e) => setCallsPending(e.target.value)}
+                  placeholder="Ej: 0"
                   className="bg-slate-800/60 border-slate-700 text-white"
                 />
+                <p className="text-[11px] text-slate-500">Por llamar o reintentar.</p>
               </div>
             </CardContent>
           </Card>
@@ -250,19 +258,19 @@ export default function ReportPage() {
             <CardHeader>
               <CardTitle className="text-base text-white">Ventas por ciudad</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               {CITIES.map((city) => (
-                <div key={city.key} className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4">
-                  <div className="flex items-center justify-between mb-3">
+                <div key={city.key} className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3">
+                  <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-white">{city.label}</h3>
                     <span className="text-xs text-slate-400">
                       Total: <span className="text-slate-200 font-semibold">{totalsByCity[city.key]}</span>
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {PRODUCTS.map((product) => (
-                      <div key={product.key} className="space-y-2">
-                        <Label htmlFor={`${city.key}-${product.key}`} className="text-xs text-slate-300">
+                      <div key={product.key} className="space-y-1">
+                        <Label htmlFor={`${city.key}-${product.key}`} className="text-[11px] uppercase tracking-wide text-slate-300">
                           {product.label}
                         </Label>
                         <Input
@@ -271,6 +279,7 @@ export default function ReportPage() {
                           min={0}
                           value={salesByCity[city.key][product.key]}
                           onChange={(e) => updateCityValue(city.key, product.key, e.target.value)}
+                          placeholder="0"
                           className="bg-slate-800/60 border-slate-700 text-white"
                         />
                       </div>
@@ -304,3 +313,5 @@ export default function ReportPage() {
     </div>
   );
 }
+
+

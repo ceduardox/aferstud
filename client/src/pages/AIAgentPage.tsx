@@ -322,6 +322,10 @@ export default function AIAgentPage() {
     }
   }, [aiProvider]);
 
+  useEffect(() => {
+    setPreviewMeta(null);
+  }, [ttsProvider, audioVoice, elevenlabsVoiceId, ttsSpeed, ttsInstructions]);
+
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: Partial<AiSettings>) => {
       return apiRequest("PATCH", "/api/ai/settings", data);

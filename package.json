@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "build": "tsx script/build.ts",
+    "prestart": "node script/db-push.cjs",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check:mojibake": "node script/check-mojibake.cjs",
     "check": "npm run check:mojibake && tsc",

@@ -4957,15 +4957,24 @@ NO uses saludos formales. Se directo y amigable.`
 
       const speed = parsed.speed ? parsed.speed / 100 : 1.0;
       const instructions = parsed.instructions ?? null;
+      const isElevenlabsPreview = provider === "elevenlabs" && Boolean(parsed.previewUrl);
       const cacheKey = provider === "elevenlabs"
-        ? `elevenlabs|${voiceId}|preview-v1`
+        ? `elevenlabs|${voiceId}|${isElevenlabsPreview ? "preview-free-v1" : "preview-paid-v1"}`
         : `openai|${voiceId}|${speed}|${instructions || ""}|${previewText}`;
+
+      const setPreviewHeaders = (cacheStatus: "hit" | "miss", isFree: boolean, source: string) => {
+        res.setHeader("X-TTS-Cache", cacheStatus);
+        res.setHeader("X-TTS-Preview-Free", isFree ? "1" : "0");
+        res.setHeader("X-TTS-Preview-Source", source);
+        res.setHeader("X-TTS-Preview-Provider", provider);
+      };
 
       const cached = await getCachedTtsPreview(cacheKey);
       if (cached?.audio_data) {
         const cachedBuffer = Buffer.isBuffer(cached.audio_data)
           ? cached.audio_data
           : Buffer.from(cached.audio_data);
+        setPreviewHeaders("hit", isElevenlabsPreview, "cache");
         res.setHeader("Content-Type", cached.mime_type || "audio/mpeg");
         res.setHeader("Cache-Control", "no-store");
         return res.send(cachedBuffer);
@@ -4998,6 +5007,7 @@ NO uses saludos formales. Se directo y amigable.`
         audioData: audioBuffer,
       });
 
+      setPreviewHeaders("miss", isElevenlabsPreview, isElevenlabsPreview ? "elevenlabs-preview" : "generated");
       res.setHeader("Content-Type", contentType);
       res.setHeader("Cache-Control", "no-store");
       res.send(audioBuffer);

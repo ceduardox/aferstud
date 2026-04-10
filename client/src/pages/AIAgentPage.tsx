@@ -124,6 +124,7 @@ export default function AIAgentPage() {
   const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState("JBFqnCBsd6RMkjVDRZzb");
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewMeta, setPreviewMeta] = useState<{ saved: boolean; free: boolean; cache: "hit" | "miss" | null } | null>(null);
   const [ttsSpeed, setTtsSpeed] = useState(100);
   const [ttsInstructions, setTtsInstructions] = useState("");
   const [fixedCommerceFlowEnabled, setFixedCommerceFlowEnabled] = useState(true);
@@ -421,6 +422,7 @@ export default function AIAgentPage() {
   const playVoicePreview = async () => {
     try {
       setPreviewPlaying(true);
+      setPreviewMeta(null);
       const selectedElevenVoice = elevenLabsVoices.find((voice) => voice.voice_id === elevenlabsVoiceId);
       const previewUrl = selectedElevenVoice?.preview_url;
       const payload =
@@ -457,8 +459,14 @@ export default function AIAgentPage() {
         throw new Error(message);
       }
 
+      const cacheHeader = response.headers.get("X-TTS-Cache");
+      const freeHeader = response.headers.get("X-TTS-Preview-Free");
+      const cacheStatus = cacheHeader === "hit" || cacheHeader === "miss" ? cacheHeader : null;
+      const isFreePreview = freeHeader === "1";
+
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+      setPreviewMeta({ saved: true, free: isFreePreview, cache: cacheStatus });
       const audio = new Audio(url);
       audio.onended = () => {
         URL.revokeObjectURL(url);
@@ -1050,19 +1058,37 @@ export default function AIAgentPage() {
                         </button>
 	                      ))}
 	                    </div>
-	                    <Button
-	                      type="button"
-	                      variant="outline"
-	                      onClick={playVoicePreview}
-	                      disabled={previewPlaying}
-	                      className="border-emerald-500/40 hover:bg-emerald-500/10"
-	                      data-testid="button-preview-openai-voice"
-	                    >
-	                      {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-	                      Probar voz seleccionada
-	                    </Button>
-	                  </>
-	                )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={playVoicePreview}
+                      disabled={previewPlaying}
+                      className="border-emerald-500/40 hover:bg-emerald-500/10"
+                      data-testid="button-preview-openai-voice"
+                    >
+                      {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Probar voz seleccionada
+                    </Button>
+                    {previewMeta && (
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Guardado en base
+                        </span>
+                        {previewMeta.free && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-cyan-200">
+                            Preview gratis
+                          </span>
+                        )}
+                        {previewMeta.cache === "hit" && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-500/40 bg-slate-500/10 px-2 py-0.5 text-slate-200">
+                            Cache
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
 
                 {ttsProvider === "elevenlabs" && (
                   <>
@@ -1114,17 +1140,35 @@ export default function AIAgentPage() {
                           </button>
 	                        ))}
 	                      </div>
-	                      <Button
-	                        type="button"
-	                        variant="outline"
-	                        onClick={playVoicePreview}
-	                        disabled={previewPlaying}
-	                        className="border-violet-500/40 hover:bg-violet-500/10"
-	                        data-testid="button-preview-elevenlabs-voice"
-		                      >
-		                        {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-		                        Probar voz seleccionada
-		                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={playVoicePreview}
+                        disabled={previewPlaying}
+                        className="border-violet-500/40 hover:bg-violet-500/10"
+                        data-testid="button-preview-elevenlabs-voice"
+                      >
+                        {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        Probar voz seleccionada
+                      </Button>
+                      {previewMeta && (
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            Guardado en base
+                          </span>
+                          {previewMeta.free && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-cyan-200">
+                              Preview gratis
+                            </span>
+                          )}
+                          {previewMeta.cache === "hit" && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-500/40 bg-slate-500/10 px-2 py-0.5 text-slate-200">
+                              Cache
+                            </span>
+                          )}
+                        </div>
+                      )}
                       </>
 	                    )}
 	                  </>

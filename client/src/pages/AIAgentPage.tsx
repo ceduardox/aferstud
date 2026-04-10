@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -126,6 +126,8 @@ export default function AIAgentPage() {
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewMeta, setPreviewMeta] = useState<{ saved: boolean; free: boolean; cache: "hit" | "miss" | null } | null>(null);
   const [previewStatusLoading, setPreviewStatusLoading] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewAudioUrlRef = useRef<string | null>(null);
   const [ttsSpeed, setTtsSpeed] = useState(100);
   const [ttsInstructions, setTtsInstructions] = useState("");
   const [fixedCommerceFlowEnabled, setFixedCommerceFlowEnabled] = useState(true);
@@ -422,6 +424,20 @@ export default function AIAgentPage() {
     updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioVoice, ttsProvider, elevenlabsVoiceId, ttsSpeed, ttsInstructions: ttsInstructions || null, learningMode: !fixedCommerceFlowEnabled, followUpEnabled, followUpMinutes });
   };
 
+  const stopPreviewAudio = useCallback(() => {
+    const audio = previewAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+    if (previewAudioUrlRef.current) {
+      URL.revokeObjectURL(previewAudioUrlRef.current);
+      previewAudioUrlRef.current = null;
+    }
+    previewAudioRef.current = null;
+    setPreviewPlaying(false);
+  }, []);
+
   const buildPreviewPayload = () => {
     const previewText = "Hola, esta es una prueba de voz para tu CRM.";
     if (ttsProvider === "elevenlabs") {
@@ -444,6 +460,7 @@ export default function AIAgentPage() {
   useEffect(() => {
     let cancelled = false;
     const loadPreviewStatus = async () => {
+      stopPreviewAudio();
       setPreviewStatusLoading(true);
       setPreviewMeta(null);
       try {
@@ -476,6 +493,7 @@ export default function AIAgentPage() {
     };
 
     if (!audioResponseEnabled) {
+      stopPreviewAudio();
       setPreviewMeta(null);
       setPreviewStatusLoading(false);
       return;
@@ -485,10 +503,11 @@ export default function AIAgentPage() {
     return () => {
       cancelled = true;
     };
-  }, [ttsProvider, audioVoice, elevenlabsVoiceId, ttsSpeed, ttsInstructions, audioResponseEnabled, selectedElevenPreviewUrl]);
+  }, [ttsProvider, audioVoice, elevenlabsVoiceId, ttsSpeed, ttsInstructions, audioResponseEnabled, selectedElevenPreviewUrl, stopPreviewAudio]);
 
   const playVoicePreview = async () => {
     try {
+      stopPreviewAudio();
       setPreviewPlaying(true);
       setPreviewStatusLoading(false);
       setPreviewMeta(null);
@@ -519,14 +538,24 @@ export default function AIAgentPage() {
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+      previewAudioUrlRef.current = url;
       setPreviewMeta({ saved: true, free: isFreePreview, cache: cacheStatus });
       const audio = new Audio(url);
+      previewAudioRef.current = audio;
       audio.onended = () => {
-        URL.revokeObjectURL(url);
+        if (previewAudioUrlRef.current) {
+          URL.revokeObjectURL(previewAudioUrlRef.current);
+          previewAudioUrlRef.current = null;
+        }
+        previewAudioRef.current = null;
         setPreviewPlaying(false);
       };
       audio.onerror = () => {
-        URL.revokeObjectURL(url);
+        if (previewAudioUrlRef.current) {
+          URL.revokeObjectURL(previewAudioUrlRef.current);
+          previewAudioUrlRef.current = null;
+        }
+        previewAudioRef.current = null;
         setPreviewPlaying(false);
         toast({ title: "Error", description: "No se pudo reproducir la muestra", variant: "destructive" });
       };

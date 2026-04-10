@@ -421,11 +421,14 @@ export default function AIAgentPage() {
   const playVoicePreview = async () => {
     try {
       setPreviewPlaying(true);
+      const selectedElevenVoice = elevenLabsVoices.find((voice) => voice.voice_id === elevenlabsVoiceId);
+      const previewUrl = selectedElevenVoice?.preview_url;
       const payload =
         ttsProvider === "elevenlabs"
           ? {
               provider: "elevenlabs",
               elevenlabsVoiceId,
+              previewUrl,
               text: "Hola, esta es una prueba de voz para tu CRM.",
             }
           : {

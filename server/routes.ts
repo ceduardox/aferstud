@@ -4692,6 +4692,7 @@ NO uses saludos formales. Se directo y amigable.`
     speed: z.number().min(25).max(400).optional(),
     instructions: z.string().nullable().optional(),
     text: z.string().min(1).max(300).optional(),
+    previewUrl: z.string().url().optional(),
   });
 
   // Get ElevenLabs available voices (user's own + shared Latin American female voices)
@@ -4900,23 +4901,106 @@ NO uses saludos formales. Se directo y amigable.`
     res.json(waStatusLogs);
   });
 
+  const TTS_PREVIEW_DEFAULT_TEXT = "Hola, esta es una prueba de voz para tu CRM de WhatsApp.";
+
+  async function ensureTtsPreviewTableExists() {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS tts_previews (
+        id SERIAL PRIMARY KEY,
+        cache_key TEXT NOT NULL UNIQUE,
+        provider TEXT NOT NULL,
+        voice_id TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        audio_data BYTEA NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  }
+
+  async function getCachedTtsPreview(cacheKey: string) {
+    await ensureTtsPreviewTableExists();
+    const result: any = await db.execute(sql`
+      SELECT cache_key, mime_type, audio_data
+      FROM tts_previews
+      WHERE cache_key = ${cacheKey}
+      LIMIT 1
+    `);
+    return result?.rows?.[0] ?? null;
+  }
+
+  async function upsertTtsPreviewCache(input: { cacheKey: string; provider: string; voiceId: string; mimeType: string; audioData: Buffer }) {
+    await ensureTtsPreviewTableExists();
+    await db.execute(sql`
+      INSERT INTO tts_previews (cache_key, provider, voice_id, mime_type, audio_data)
+      VALUES (${input.cacheKey}, ${input.provider}, ${input.voiceId}, ${input.mimeType}, ${input.audioData})
+      ON CONFLICT (cache_key)
+      DO UPDATE SET
+        mime_type = EXCLUDED.mime_type,
+        audio_data = EXCLUDED.audio_data,
+        updated_at = NOW()
+    `);
+  }
+
   app.post("/api/tts/preview", requireAuth, async (req, res) => {
     try {
       const parsed = ttsPreviewSchema.parse(req.body);
-      const previewText =
-        parsed.text?.trim() ||
-        "Hola, esta es una prueba de voz para tu CRM de WhatsApp.";
-      const voice = parsed.voice || "nova";
-      const options: TtsOptions = {
-        provider: parsed.provider,
-        elevenlabsVoiceId: parsed.elevenlabsVoiceId,
-        speed: parsed.speed ? parsed.speed / 100 : 1.0,
-        instructions: parsed.instructions ?? null,
-      };
-      const generated = await generateTtsAudioBuffer(previewText, voice, options, "preview");
-      res.setHeader("Content-Type", generated.contentType);
+      const previewText = parsed.text?.trim() || TTS_PREVIEW_DEFAULT_TEXT;
+      const provider = parsed.provider;
+      const voiceId = provider === "elevenlabs"
+        ? parsed.elevenlabsVoiceId
+        : parsed.voice || "nova";
+
+      if (!voiceId) {
+        return res.status(400).json({ message: "Missing voice identifier" });
+      }
+
+      const speed = parsed.speed ? parsed.speed / 100 : 1.0;
+      const instructions = parsed.instructions ?? null;
+      const cacheKey = provider === "elevenlabs"
+        ? `elevenlabs|${voiceId}|preview-v1`
+        : `openai|${voiceId}|${speed}|${instructions || ""}|${previewText}`;
+
+      const cached = await getCachedTtsPreview(cacheKey);
+      if (cached?.audio_data) {
+        const cachedBuffer = Buffer.isBuffer(cached.audio_data)
+          ? cached.audio_data
+          : Buffer.from(cached.audio_data);
+        res.setHeader("Content-Type", cached.mime_type || "audio/mpeg");
+        res.setHeader("Cache-Control", "no-store");
+        return res.send(cachedBuffer);
+      }
+
+      let audioBuffer: Buffer;
+      let contentType: string;
+
+      if (provider === "elevenlabs" && parsed.previewUrl) {
+        const previewRes = await axios.get(parsed.previewUrl, { responseType: "arraybuffer" });
+        audioBuffer = Buffer.from(previewRes.data);
+        contentType = previewRes.headers["content-type"] || "audio/mpeg";
+      } else {
+        const options: TtsOptions = {
+          provider,
+          elevenlabsVoiceId: provider === "elevenlabs" ? voiceId : parsed.elevenlabsVoiceId,
+          speed,
+          instructions,
+        };
+        const generated = await generateTtsAudioBuffer(previewText, voiceId, options, "preview");
+        audioBuffer = generated.audioBuffer;
+        contentType = generated.contentType;
+      }
+
+      await upsertTtsPreviewCache({
+        cacheKey,
+        provider,
+        voiceId,
+        mimeType: contentType,
+        audioData: audioBuffer,
+      });
+
+      res.setHeader("Content-Type", contentType);
       res.setHeader("Cache-Control", "no-store");
-      res.send(generated.audioBuffer);
+      res.send(audioBuffer);
     } catch (error: any) {
       if (error.name === "ZodError") {
         return res.status(400).json({ message: "Invalid preview payload", errors: error.errors });

@@ -159,7 +159,7 @@ export default function InboxPage() {
           </div>
           <div>
             <h1 className="font-bold text-lg text-white flex items-center gap-2">
-              Ryztor Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
+              AFER <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">STUDIO</span>
               <Zap className="h-4 w-4 text-yellow-400" />
             </h1>
             <p className="text-xs text-slate-400 flex items-center gap-1">

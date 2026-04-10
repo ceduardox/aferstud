@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
@@ -58,6 +59,7 @@ interface AdRoutingRule {
   adId: string;
   agentIds: number[];
   isActive: boolean;
+  isExclusive: boolean;
   updatedAt?: string | null;
 }
 
@@ -121,6 +123,7 @@ export default function AgentsPage() {
   const [dateTo, setDateTo] = useState("");
   const [routingAdId, setRoutingAdId] = useState("");
   const [routingIsActive, setRoutingIsActive] = useState(true);
+  const [routingIsExclusive, setRoutingIsExclusive] = useState(true);
   const [routingAgentIds, setRoutingAgentIds] = useState<number[]>([]);
   const [costDate, setCostDate] = useState(() => {
     const now = new Date();
@@ -315,7 +318,7 @@ export default function AgentsPage() {
   });
 
   const upsertAdRoutingMutation = useMutation({
-    mutationFn: async (data: { adId: string; agentIds: number[]; isActive: boolean }) => {
+    mutationFn: async (data: { adId: string; agentIds: number[]; isActive: boolean; isExclusive: boolean }) => {
       return apiRequest("PUT", "/api/ad-routing-rules", data);
     },
     onSuccess: () => {
@@ -323,6 +326,7 @@ export default function AgentsPage() {
       setRoutingAdId("");
       setRoutingAgentIds([]);
       setRoutingIsActive(true);
+      setRoutingIsExclusive(true);
       toast({ title: "Regla de anuncio guardada" });
     },
     onError: (error: any) => {
@@ -679,8 +683,7 @@ export default function AgentsPage() {
           <div className="mb-3">
             <h3 className="text-sm font-semibold text-white">Asignacion por anuncio (ad_id)</h3>
             <p className="text-xs text-slate-400">
-              Opcional: si no hay regla o agentes activos en esa regla, el sistema usa la asignacion normal actual.{" "}
-              Los agentes en reglas activas solo reciben mensajes de esos anuncios.
+              Opcional: si no hay regla o agentes activos en esa regla, el sistema usa la asignacion normal actual.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 mb-3">
@@ -699,6 +702,40 @@ export default function AgentsPage() {
                 data-testid="switch-ad-routing-active"
               />
             </div>
+          </div>
+          <div className="mb-3">
+            <p className="text-xs text-slate-400 mb-2">Modo de asignacion</p>
+            <ToggleGroup
+              type="single"
+              value={routingIsExclusive ? "exclusive" : "mixed"}
+              onValueChange={(value) => {
+                if (!value) return;
+                setRoutingIsExclusive(value === "exclusive");
+              }}
+              className="justify-start flex-wrap"
+            >
+              <ToggleGroupItem
+                value="exclusive"
+                variant="outline"
+                size="sm"
+                className="border-slate-600 text-slate-200 data-[state=on]:bg-emerald-600 data-[state=on]:text-white"
+                data-testid="toggle-ad-routing-exclusive"
+              >
+                Solo anuncio
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="mixed"
+                variant="outline"
+                size="sm"
+                className="border-slate-600 text-slate-200 data-[state=on]:bg-emerald-600 data-[state=on]:text-white"
+                data-testid="toggle-ad-routing-mixed"
+              >
+                Anuncio + general
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <p className="text-[11px] text-slate-500 mt-2">
+              "Solo anuncio" = no recibe la rotacion general. "Anuncio + general" = recibe ambos.
+            </p>
           </div>
           <div className="mb-3">
             <p className="text-xs text-slate-400 mb-2">Agentes destino</p>
@@ -738,6 +775,7 @@ export default function AgentsPage() {
                   adId: cleanAdId,
                   agentIds: selectedActiveAgents,
                   isActive: routingIsActive,
+                  isExclusive: routingIsExclusive,
                 });
               }}
               disabled={upsertAdRoutingMutation.isPending}
@@ -761,7 +799,9 @@ export default function AgentsPage() {
                   <div className="min-w-0">
                     <p className="text-sm text-white font-medium break-all">ad_id: {rule.adId}</p>
                     <p className="text-xs text-slate-400">
-                      {rule.isActive ? "Activo" : "Inactivo"} · {rule.agentIds.map(getAgentName).join(", ")}
+                      {rule.isActive ? "Activo" : "Inactivo"} |{" "}
+                      {rule.isExclusive ? "Solo anuncio" : "Anuncio + general"} |{" "}
+                      {rule.agentIds.map(getAgentName).join(", ")}
                     </p>
                   </div>
                   <Button

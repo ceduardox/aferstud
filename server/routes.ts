@@ -192,6 +192,7 @@ interface AdLeadRoutingRule {
   adId: string;
   agentIds: number[];
   isActive: boolean;
+  isExclusive: boolean;
   updatedAt?: string | Date | null;
 }
 interface DailyCostSetting {
@@ -304,8 +305,13 @@ async function ensureAdLeadRoutingTableExists() {
       ad_id TEXT NOT NULL UNIQUE,
       agent_ids TEXT NOT NULL DEFAULT '',
       is_active BOOLEAN NOT NULL DEFAULT true,
+      is_exclusive BOOLEAN NOT NULL DEFAULT true,
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+  await db.execute(sql`
+    ALTER TABLE ad_lead_routing_rules
+    ADD COLUMN IF NOT EXISTS is_exclusive BOOLEAN NOT NULL DEFAULT true
   `);
   adLeadRoutingTableEnsured = true;
 }
@@ -562,6 +568,7 @@ function mapAdLeadRoutingRow(row: any): AdLeadRoutingRule {
     adId: String(row.ad_id || ""),
     agentIds: parseAgentIds(row.agent_ids),
     isActive: Boolean(row.is_active),
+    isExclusive: Boolean(row.is_exclusive),
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -618,7 +625,7 @@ function mapDailyReportRow(row: any): DailyReport {
 async function getAdLeadRoutingRules(): Promise<AdLeadRoutingRule[]> {
   await ensureAdLeadRoutingTableExists();
   const result: any = await db.execute(sql`
-    SELECT id, ad_id, agent_ids, is_active, updated_at
+    SELECT id, ad_id, agent_ids, is_active, is_exclusive, updated_at
     FROM ad_lead_routing_rules
     ORDER BY updated_at DESC, id DESC
   `);
@@ -629,7 +636,7 @@ async function getExclusiveAdRoutingAgentIds(): Promise<Set<number>> {
   const rules = await getAdLeadRoutingRules();
   const reserved = new Set<number>();
   for (const rule of rules) {
-    if (!rule.isActive) continue;
+    if (!rule.isActive || !rule.isExclusive) continue;
     for (const id of rule.agentIds) {
       reserved.add(id);
     }
@@ -642,7 +649,7 @@ async function getAdLeadRoutingRuleByAdId(adIdRaw: string): Promise<AdLeadRoutin
   const adId = normalizeAdId(adIdRaw);
   if (!adId) return null;
   const result: any = await db.execute(sql`
-    SELECT id, ad_id, agent_ids, is_active, updated_at
+    SELECT id, ad_id, agent_ids, is_active, is_exclusive, updated_at
     FROM ad_lead_routing_rules
     WHERE ad_id = ${adId}
     LIMIT 1
@@ -651,20 +658,22 @@ async function getAdLeadRoutingRuleByAdId(adIdRaw: string): Promise<AdLeadRoutin
   return row ? mapAdLeadRoutingRow(row) : null;
 }
 
-async function upsertAdLeadRoutingRule(input: { adId: string; agentIds: number[]; isActive?: boolean }): Promise<AdLeadRoutingRule> {
+async function upsertAdLeadRoutingRule(input: { adId: string; agentIds: number[]; isActive?: boolean; isExclusive?: boolean }): Promise<AdLeadRoutingRule> {
   await ensureAdLeadRoutingTableExists();
   const adId = normalizeAdId(input.adId);
   const agentIds = parseAgentIds(input.agentIds);
   const isActive = typeof input.isActive === "boolean" ? input.isActive : true;
+  const isExclusive = typeof input.isExclusive === "boolean" ? input.isExclusive : true;
   const result: any = await db.execute(sql`
-    INSERT INTO ad_lead_routing_rules (ad_id, agent_ids, is_active)
-    VALUES (${adId}, ${agentIds.join(",")}, ${isActive})
+    INSERT INTO ad_lead_routing_rules (ad_id, agent_ids, is_active, is_exclusive)
+    VALUES (${adId}, ${agentIds.join(",")}, ${isActive}, ${isExclusive})
     ON CONFLICT (ad_id)
     DO UPDATE SET
       agent_ids = EXCLUDED.agent_ids,
       is_active = EXCLUDED.is_active,
+      is_exclusive = EXCLUDED.is_exclusive,
       updated_at = NOW()
-    RETURNING id, ad_id, agent_ids, is_active, updated_at
+    RETURNING id, ad_id, agent_ids, is_active, is_exclusive, updated_at
   `);
   return mapAdLeadRoutingRow(result.rows[0]);
 }
@@ -5423,6 +5432,7 @@ Maximo 2 lineas. Se especifico y practico.`;
         adId: z.string().min(1).max(120),
         agentIds: z.array(z.number().int().positive()).min(1).max(50),
         isActive: z.boolean().optional(),
+        isExclusive: z.boolean().optional(),
       }).parse(req.body);
 
       const activeAgents = await storage.getActiveAgents();
@@ -5436,6 +5446,7 @@ Maximo 2 lineas. Se especifico y practico.`;
         adId: parsed.adId,
         agentIds: validAgentIds,
         isActive: parsed.isActive,
+        isExclusive: parsed.isExclusive,
       });
       res.json(saved);
     } catch (error: any) {

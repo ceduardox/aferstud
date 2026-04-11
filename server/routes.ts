@@ -9,7 +9,7 @@ import connectPgSimple from "connect-pg-simple";
 import axios from "axios";
 import { generateAiResponse } from "./ai-service";
 import { initFollowUp } from "./follow-up";
-import { insertProductSchema, messages as messagesTable, updateOrderStatusSchema, type Message as StoredMessage, type Product as StoredProduct } from "@shared/schema";
+import { insertProductSchema, messages as messagesTable, updateOrderStatusSchema, type Message as StoredMessage } from "@shared/schema";
 import { db, pool } from "./db";
 import OpenAI from "openai";
 import fs from "fs";
@@ -29,8 +29,6 @@ const WHATSAPP_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
 
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
-const FIRST_CONTACT_TOP_LEVEL_BUTTONS = "[BOTONES: Azucar y peso, Dolor y estres, Dolor articular]";
-const FIRST_CONTACT_AZUCAR_PESO_BUTTONS = "[BOTONES: Solo diabetes, Diabetes + peso]";
 const DEFAULT_ADVISOR_NAME = "Isabella";
 const upsertSubadminSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -44,11 +42,6 @@ const updateSubadminSchema = z.object({
   password: z.string().min(1).max(100).optional(),
   isActive: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0, "At least one field is required");
-function getFirstContactProblemMenuResponse(advisorName: string) {
-  return `Hola, soy ${advisorName} de RYZTOR.
-Con gusto le ayudo. Que le interesa mejorar hoy?
-${FIRST_CONTACT_TOP_LEVEL_BUTTONS}`;
-}
 const PROMPT_PROFILE_PRIMARY_TITLE = "__SYSTEM_PROMPT_PRIMARY__";
 const PROMPT_PROFILE_SECONDARY_TITLE = "__SYSTEM_PROMPT_SECONDARY__";
 const PROMPT_PROFILE_ACTIVE_TITLE = "__SYSTEM_PROMPT_ACTIVE__";
@@ -57,113 +50,6 @@ const HIDDEN_PROMPT_PROFILE_TITLES = new Set([
   PROMPT_PROFILE_SECONDARY_TITLE,
   PROMPT_PROFILE_ACTIVE_TITLE,
 ]);
-const BERBERINA_IMAGE_URL = "https://i.ibb.co/vC27GxKC/BERBERINA-BANNER.jpg";
-const BITTER_IMAGE_URL = "https://i.ibb.co/whdDDLLC/image-Pippit-202602222317.jpg";
-const CITRATO_IMAGE_URL = "https://i.ibb.co/Q7TYCb0F/citrato.jpg";
-const BOSWELLIA_IMAGE_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Boswellia_serrata_kadukas.jpg/640px-Boswellia_serrata_kadukas.jpg";
-const FIRST_CONTACT_ROUTE_RESPONSES = {
-  azucar_y_peso_menu: {
-    productName: "Selector Azucar y peso",
-    imageUrl: "",
-    listText: FIRST_CONTACT_AZUCAR_PESO_BUTTONS,
-    responseText: `Perfecto. Te ayudo a elegir en 1 paso.
-Si deseas enfoque solo para diabetes, elige la primera opcion.
-Si tambien buscas apoyar bajar de peso, elige la segunda opcion.
-${FIRST_CONTACT_AZUCAR_PESO_BUTTONS}`,
-    benefitsText: "",
-    indicationsText: "",
-  },
-  diabetes: {
-    productName: "Berberina RYZTOR",
-    imageUrl: BERBERINA_IMAGE_URL,
-    listText: "[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]",
-    responseText: `*Berberina RYZTOR*
-Indicada para diabetes tipo 2 y prediabetes.
-- Ayuda con control de glucosa y picos de azucar.
-- Apoya metabolismo y control de antojos.
-- Contribuye al equilibrio de colesterol y trigliceridos.
-Producto americano de alta calidad.
-*280 Bs* | Envio segun ciudad.
-[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    benefitsText: `*Beneficios Berberina*
-- Apoya control de glucosa y picos de azucar.
-- Ayuda con metabolismo y control de antojos.
-- Tambien contribuye al equilibrio de colesterol y trigliceridos.
-[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    indicationsText: `*Indicaciones Berberina*
-Adultos: 2 capsulas al dia.
-Preferiblemente con comida.
-Rendimiento referencial: aprox 30 dias por frasco.
-[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-  },
-  diabetes_y_peso: {
-    productName: "Berberina + Bitter Melon RYZTOR",
-    imageUrl: BITTER_IMAGE_URL,
-    listText: "[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]",
-    responseText: `*Berberina + Bitter Melon RYZTOR*
-Ideal para personas con diabetes que tambien buscan bajar de peso.
-- Ayuda con control de azucar y picos de glucosa.
-- Apoya control de antojos, metabolismo y peso.
-- Excelente apoyo para plan de diabetes y control de peso.
-Producto americano de alta calidad.
-*300 Bs* | Envio segun ciudad.
-[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    benefitsText: `*Beneficios Berberina + Bitter*
-- Apoya control de azucar y picos de glucosa.
-- Ayuda con control de antojos, metabolismo y peso.
-- Es una opcion enfocada en diabetes y control de peso.
-[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    indicationsText: `*Indicaciones Berberina + Bitter*
-Adultos: 2 capsulas al dia.
-Tomarlas con comida y agua.
-Si preguntan horario, responder: preferiblemente con comida.
-[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-  },
-  dolor_y_estres: {
-    productName: "Citrato de Magnesio RYZTOR",
-    imageUrl: CITRATO_IMAGE_URL,
-    listText: "[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]",
-    responseText: `*Citrato de Magnesio RYZTOR*
-Ideal para dolor muscular, calambres y tension.
-- Favorece relajacion, descanso y bienestar muscular.
-- Apoya alivio de calambres y recuperacion muscular.
-Producto americano de alta calidad.
-*300 Bs* | Envio segun ciudad.
-[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    benefitsText: `*Beneficios Citrato*
-- Apoya alivio de dolor muscular, calambres y tension.
-- Favorece relajacion, descanso y bienestar muscular.
-- Puede apoyar recuperacion muscular y confort muscular.
-[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    indicationsText: `*Indicaciones Citrato*
-Adultos: 2 capsulas al dia.
-Preferiblemente con comida.
-Si preguntan horario, responder: preferiblemente con una comida del dia.
-[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-  },
-  dolor_articular: {
-    productName: "Boswellia Serrata RYZTOR",
-    imageUrl: BOSWELLIA_IMAGE_URL,
-    listText: "[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]",
-    responseText: `*Boswellia Serrata RYZTOR*
-Enfocada en dolor articular por artritis y artrosis.
-- Apoya desinflamacion y movilidad de articulaciones.
-- Ayuda a reducir rigidez y mejorar confort al caminar.
-Producto americano de alta calidad.
-*320 Bs* | Envio segun ciudad.
-[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    benefitsText: `*Beneficios Boswellia Serrata*
-- Apoya desinflamacion articular en artritis y artrosis.
-- Puede mejorar movilidad y reducir rigidez articular.
-- Ayuda al confort en rodillas, caderas y manos.
-[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-    indicationsText: `*Indicaciones Boswellia Serrata*
-Adultos: 2 capsulas al dia.
-Tomarlas con comida y agua.
-Constancia diaria recomendada para mejor resultado.
-[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Quiero hacer mi pedido, Quiero hablar con alguien, Tengo otra consulta]`,
-  },
-} as const;
 interface BufferedMessage {
   messageForAi: string;
   imageBase64ForAi?: string;
@@ -860,31 +746,6 @@ function resolvePublicImageUrl(imageUrl?: string | null) {
   return `${baseUrl}${imageUrl}`;
 }
 
-function findCatalogProductByRouteName(products: StoredProduct[], routeProductName: string) {
-  const routeName = normalizeInboundText(routeProductName);
-  if (!routeName) return null;
-  return (
-    products.find((product) => {
-      const productName = normalizeInboundText(product.name || "");
-      if (productName === routeName) return true;
-      if (productName.includes(routeName) || routeName.includes(productName)) return true;
-      const keywords = normalizeInboundText(product.keywords || "");
-      return Boolean(keywords && (keywords.includes(routeName) || routeName.includes(keywords)));
-    }) || null
-  );
-}
-
-function getPreferredCatalogProductImage(product: StoredProduct | null) {
-  if (!product) return "";
-  return (
-    resolvePublicImageUrl(product.imageUrl) ||
-    resolvePublicImageUrl(product.imageBottleUrl) ||
-    resolvePublicImageUrl(product.imageDoseUrl) ||
-    resolvePublicImageUrl(product.imageIngredientsUrl) ||
-    ""
-  );
-}
-
 async function getStoredProductImageByFileName(fileName: string): Promise<{ mimeType: string; data: Buffer } | null> {
   await ensureProductImageStorageTableExists();
   const result: any = await db.execute(sql`
@@ -902,116 +763,6 @@ async function getStoredProductImageByFileName(fileName: string): Promise<{ mime
   };
 }
 
-function isGenericFirstContactTrigger(text: string): boolean {
-  const normalized = normalizeInboundText(text);
-  if (!normalized) return false;
-
-  const tokens = normalized.split(" ").filter(Boolean);
-  if (tokens.length === 0 || tokens.length > 4) return false;
-
-  const allowedTokens = new Set([
-    "hola",
-    "ola",
-    "buenas",
-    "buenos",
-    "dias",
-    "dia",
-    "tardes",
-    "noches",
-    "precio",
-    "info",
-    "informacion",
-    "mas",
-    "esto",
-    "por",
-    "favor",
-    "consulta",
-  ]);
-
-  const coreTokens = new Set([
-    "hola",
-    "ola",
-    "buenas",
-    "precio",
-    "info",
-    "informacion",
-    "esto",
-    "consulta",
-  ]);
-
-  return tokens.every(token => allowedTokens.has(token)) && tokens.some(token => coreTokens.has(token));
-}
-
-function shouldForceFirstContactProblemMenu(
-  messageForAi: string,
-  recentMessages: StoredMessage[],
-  imageBase64ForAi?: string,
-  wasAudioMessage?: boolean,
-): boolean {
-  if (!messageForAi || imageBase64ForAi || wasAudioMessage) return false;
-
-  const lastTenMessages = recentMessages.slice(-10);
-  const hasOutboundHistory = lastTenMessages.some(message => message.direction === "out");
-  if (hasOutboundHistory) return false;
-
-  return isGenericFirstContactTrigger(messageForAi);
-}
-
-function getForcedFirstContactRouteResponse(
-  messageForAi: string,
-  recentMessages: StoredMessage[],
-) {
-  const latestOutbound = [...recentMessages].reverse().find(message => message.direction === "out");
-  if (!latestOutbound?.text) {
-    return null;
-  }
-
-  const normalized = normalizeInboundText(messageForAi);
-  const isTopLevelMenu = latestOutbound.text.includes(FIRST_CONTACT_TOP_LEVEL_BUTTONS);
-  const isAzucarPesoMenu = latestOutbound.text.includes(FIRST_CONTACT_AZUCAR_PESO_BUTTONS);
-
-  if (isTopLevelMenu) {
-    if (normalized === "azucar y peso") return FIRST_CONTACT_ROUTE_RESPONSES.azucar_y_peso_menu;
-    if (normalized === "dolor y estres") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_y_estres;
-    if (normalized === "dolor articular") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_articular;
-  }
-
-  if (isAzucarPesoMenu) {
-    if (normalized === "solo diabetes") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes;
-    if (
-      normalized === "diabetes peso" ||
-      normalized === "diabetes bajar de peso" ||
-      normalized === "diabetes y bajar de peso"
-    ) {
-      return FIRST_CONTACT_ROUTE_RESPONSES.diabetes_y_peso;
-    }
-  }
-
-  return null;
-}
-
-function getCurrentProductContext(recentMessages: StoredMessage[]) {
-  const latestOutbound = [...recentMessages].reverse().find(message => message.direction === "out" && typeof message.text === "string");
-  if (!latestOutbound?.text) return null;
-
-  const outboundText = latestOutbound.text;
-  return Object.values(FIRST_CONTACT_ROUTE_RESPONSES).find(product =>
-    outboundText.includes(product.productName) || outboundText.includes(product.listText)
-  ) || null;
-}
-
-function shouldSendImageForProduct(
-  recentMessages: StoredMessage[],
-  productName: string,
-  imageUrl: string,
-): boolean {
-  const lastTenMessages = recentMessages.slice(-10);
-
-  return !lastTenMessages.some(message => {
-    if (message.direction !== "out" || typeof message.text !== "string") return false;
-    return message.text.includes(imageUrl) || message.text.includes(productName);
-  });
-}
 
 async function ensurePushSettingsTable() {
   await db.execute(sql`
@@ -1167,119 +918,7 @@ async function processAiResponse(data: BufferedMessage) {
 
   try {
     const aiSettings = await storage.getAiSettings();
-    const fixedCommerceFlowEnabled = aiSettings?.learningMode !== true;
     const recentMessages = await storage.getMessages(conversationId);
-
-    if (fixedCommerceFlowEnabled && shouldForceFirstContactProblemMenu(messageForAi, recentMessages, imageBase64ForAi, wasAudioMessage)) {
-      const firstContactResponseText = getFirstContactProblemMenuResponse(advisorName);
-      const waResponse = await sendAiResponseToWhatsApp(from, firstContactResponseText);
-      const waMessageId = waResponse.messages[0].id;
-
-      await storage.createMessage({
-        conversationId,
-        waMessageId,
-        direction: "out",
-        type: "text",
-        text: firstContactResponseText,
-        timestamp: Math.floor(Date.now() / 1000).toString(),
-        status: "sent",
-        rawJson: waResponse,
-      });
-
-      await storage.updateConversation(conversationId, {
-        needsHumanAttention: false,
-        lastMessage: firstContactResponseText,
-        lastMessageTimestamp: new Date(),
-      });
-
-      return;
-    }
-
-    const forcedRouteResponse = fixedCommerceFlowEnabled
-      ? getForcedFirstContactRouteResponse(messageForAi, recentMessages)
-      : null;
-    if (forcedRouteResponse && !imageBase64ForAi && !wasAudioMessage) {
-      let imageUrlToSend = resolvePublicImageUrl(forcedRouteResponse.imageUrl);
-      const products = await storage.getProducts();
-      const matchedCatalogProduct = findCatalogProductByRouteName(products, forcedRouteResponse.productName);
-      const catalogImage = getPreferredCatalogProductImage(matchedCatalogProduct);
-      if (catalogImage) {
-        imageUrlToSend = catalogImage;
-      }
-
-      if (imageUrlToSend && shouldSendImageForProduct(recentMessages, forcedRouteResponse.productName, imageUrlToSend)) {
-        const imgResponse = await sendToWhatsApp(from, "image", { imageUrl: imageUrlToSend });
-        await storage.createMessage({
-          conversationId,
-          waMessageId: imgResponse.messages[0].id,
-          direction: "out",
-          type: "image",
-          text: imageUrlToSend,
-          mediaId: null,
-          mimeType: null,
-          timestamp: Math.floor(Date.now() / 1000).toString(),
-          status: "sent",
-          rawJson: imgResponse,
-        });
-      }
-
-      const waResponse = await sendAiResponseToWhatsApp(from, forcedRouteResponse.responseText);
-      const waMessageId = waResponse.messages[0].id;
-
-      await storage.createMessage({
-        conversationId,
-        waMessageId,
-        direction: "out",
-        type: "text",
-        text: forcedRouteResponse.responseText,
-        timestamp: Math.floor(Date.now() / 1000).toString(),
-        status: "sent",
-        rawJson: waResponse,
-      });
-
-      await storage.updateConversation(conversationId, {
-        needsHumanAttention: false,
-        lastMessage: forcedRouteResponse.responseText,
-        lastMessageTimestamp: new Date(),
-      });
-
-      return;
-    }
-
-    const currentProductContext = fixedCommerceFlowEnabled ? getCurrentProductContext(recentMessages) : null;
-    const normalizedMessage = normalizeInboundText(messageForAi);
-    if (currentProductContext && !imageBase64ForAi && !wasAudioMessage) {
-      const submenuResponse =
-        normalizedMessage === "beneficios" || normalizedMessage === "beneficio"
-          ? currentProductContext.benefitsText
-          : normalizedMessage === "indicaciones" || normalizedMessage === "indicacion"
-            ? currentProductContext.indicationsText
-            : null;
-
-      if (submenuResponse) {
-        const waResponse = await sendAiResponseToWhatsApp(from, submenuResponse);
-        const waMessageId = waResponse.messages[0].id;
-
-        await storage.createMessage({
-          conversationId,
-          waMessageId,
-          direction: "out",
-          type: "text",
-          text: submenuResponse,
-          timestamp: Math.floor(Date.now() / 1000).toString(),
-          status: "sent",
-          rawJson: waResponse,
-        });
-
-        await storage.updateConversation(conversationId, {
-          needsHumanAttention: false,
-          lastMessage: submenuResponse,
-          lastMessageTimestamp: new Date(),
-        });
-
-        return;
-      }
-    }
 
     const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi, advisorName);
 

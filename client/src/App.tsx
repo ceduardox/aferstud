@@ -97,6 +97,7 @@ function AgentRoute({ component: Component }: { component: React.ComponentType }
 function Router() {
   return (
     <Suspense fallback={null}>
+      <NormalizeTrailingSlash />
       <Switch>
         <Route path="/login" component={LoginPage} />
         <Route path="/privacy-policy" component={PrivacyPolicyPage} />
@@ -135,6 +136,18 @@ function Router() {
       </Switch>
     </Suspense>
   );
+}
+
+function NormalizeTrailingSlash() {
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (location.length > 1 && location.endsWith("/")) {
+      setLocation(location.replace(/\/+$/, ""), { replace: true });
+    }
+  }, [location, setLocation]);
+
+  return null;
 }
 
 function OneSignalIdentitySync() {
